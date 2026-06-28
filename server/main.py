@@ -66,9 +66,12 @@ async def get_db():
 # ── App lifespan ─────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    log.info('Database ready')
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        log.info('Database ready')
+    except Exception as e:
+        log.error(f'Database init error: {e}')
     yield
     await engine.dispose()
 
@@ -443,7 +446,7 @@ class IbanConfirmRequest(BaseModel):
 
 @app.post('/api/payments/iban/confirm')
 async def iban_confirm(body: IbanConfirmRequest, db: AsyncSession = Depends(get_db)):
-    expected = hmac.new(settings.license_secret.encode(), b'admin', hashlib.sha256).hexdigest()
+    expected = hmac.new(settings.license_secret.encode(), b'admin', digestmod=hashlib.sha256).hexdigest()
     if body.admin_key != expected:
         raise HTTPException(403, 'Forbidden')
     ok = await _confirm_order(db, body.order_id.upper(), notes=body.notes)
