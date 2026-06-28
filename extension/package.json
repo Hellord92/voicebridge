@@ -1,0 +1,10 @@
+{
+  "name": "linguameet-extension",
+  "private": true,
+  "version": "0.1.0",
+  "description": "LinguaMeet Chrome extension test runner",
+  "scripts": {
+    "test": "node tests/run-checks.mjs",
+    "check": "node tests/run-checks.mjs"
+  }
+}

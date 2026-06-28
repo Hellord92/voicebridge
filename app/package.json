@@ -1,0 +1,70 @@
+{
+  "name": "voicebridge",
+  "productName": "VoiceBridge",
+  "version": "0.1.0",
+  "description": "Real-time voice translation — speak any language, meeting hears another",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "dev":     "concurrently \"vite\" \"electron .\"",
+    "build":   "vite build && electron-builder",
+    "preview": "vite preview",
+    "rebuild-core": "cd ../core && npm run build"
+  },
+  "dependencies": {
+    "@voicebridge/core": "file:../core",
+    "electron-store":    "^8.2.0",
+    "firebase":          "^10.13.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer":         "^10.4.20",
+    "concurrently":         "^8.2.2",
+    "electron":             "^31.0.0",
+    "electron-builder":     "^24.13.3",
+    "postcss":              "^8.4.41",
+    "react":                "^18.3.1",
+    "react-dom":            "^18.3.1",
+    "tailwindcss":          "^3.4.10",
+    "vite":                 "^5.4.0"
+  },
+  "build": {
+    "appId":   "app.voicebridge",
+    "productName": "VoiceBridge",
+    "icon": "assets/icon.png",
+    "mac": {
+      "category":    "public.app-category.utilities",
+      "target":      [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "hardenedRuntime": true,
+      "entitlements": "electron/entitlements.mac.plist",
+      "entitlementsInherit": "electron/entitlements.mac.plist",
+      "extraResources": [
+        { "from": "../drivers/macos/build/VoiceBridgeAudio.driver",
+          "to":   "VoiceBridgeAudio.driver" }
+      ],
+      "pkg": {
+        "scripts": "electron/scripts"
+      }
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon":   "assets/icon.ico",
+      "extraResources": [
+        { "from": "../drivers/windows/vbaudio-setup.exe",
+          "to":   "vbaudio-setup.exe" }
+      ]
+    },
+    "nsis": {
+      "oneClick":        false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish":  true
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "assets/**/*",
+      "node_modules/**/*",
+      "!node_modules/@voicebridge/core/src/**"
+    ]
+  }
+}

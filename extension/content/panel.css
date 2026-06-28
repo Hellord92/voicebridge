@@ -1,0 +1,102 @@
+#linguameet-panel {
+  position: fixed;
+  bottom: 88px;
+  right: 20px;
+  z-index: 2147483646;
+  width: 300px;
+  font-family: "Google Sans", Roboto, system-ui, sans-serif;
+  font-size: 13px;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+  user-select: none;
+}
+
+#linguameet-panel .lm-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(30, 41, 59, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+#linguameet-panel .lm-logo {
+  font-weight: 600;
+  color: #38bdf8;
+  flex: 1;
+  letter-spacing: 0.02em;
+}
+
+#linguameet-panel .lm-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #64748b;
+  flex-shrink: 0;
+}
+
+#linguameet-panel .lm-status-dot.lm-active { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+#linguameet-panel .lm-status-dot.lm-idle { background: #64748b; }
+#linguameet-panel .lm-status-dot.lm-err { background: #ef4444; }
+
+#linguameet-panel button {
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+#linguameet-panel button:hover { background: rgba(56, 189, 248, 0.2); color: #fff; }
+#linguameet-panel .lm-toggle.lm-active { background: rgba(239, 68, 68, 0.25); color: #fca5a5; }
+
+#linguameet-panel .lm-body {
+  padding: 10px 12px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+#linguameet-panel .lm-body.lm-hidden { display: none; }
+
+#linguameet-panel .lm-row {
+  margin-bottom: 8px;
+}
+
+#linguameet-panel .lm-label {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+#linguameet-panel .lm-text {
+  margin: 0;
+  line-height: 1.45;
+  max-height: 72px;
+  overflow-y: auto;
+  word-break: break-word;
+}
+
+#linguameet-panel .lm-line {
+  display: inline;
+  color: #f1f5f9;
+}
+
+#linguameet-panel .lm-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+}

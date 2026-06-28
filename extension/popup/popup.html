@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VoiceBridge</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 340px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 16px;
+    }
+    h1 { font-size: 18px; color: #38bdf8; margin-bottom: 2px; }
+    .sub { font-size: 11px; color: #64748b; margin-bottom: 16px; }
+    label {
+      display: block; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      color: #94a3b8; margin-bottom: 4px;
+    }
+    input, select {
+      width: 100%; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid #334155; background: #1e293b;
+      color: #f1f5f9; font-size: 13px; margin-bottom: 12px;
+    }
+    input:focus, select:focus { outline: none; border-color: #38bdf8; }
+    .lang-row { display: grid; grid-template-columns: 1fr 24px 1fr; gap: 6px; align-items: start; margin-bottom: 12px; }
+    .lang-arrow { text-align: center; color: #64748b; padding-top: 28px; }
+    .lang-row label { margin-bottom: 4px; }
+    .lang-row select { margin-bottom: 0; }
+    .actions { display: flex; gap: 8px; margin-top: 4px; }
+    button {
+      flex: 1; padding: 10px; border: none; border-radius: 8px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    #btn-start { background: #0ea5e9; color: #fff; }
+    #btn-start:hover { background: #0284c7; }
+    #btn-stop  { background: #334155; color: #cbd5e1; }
+    #btn-stop:hover  { background: #475569; }
+    #btn-save  {
+      background: transparent; border: 1px solid #334155;
+      color: #94a3b8; margin-top: 8px; width: 100%;
+    }
+    #btn-save:hover { border-color: #38bdf8; color: #38bdf8; }
+    .status {
+      margin-top: 12px; padding: 8px 10px; border-radius: 8px;
+      font-size: 12px; background: #1e293b; color: #94a3b8; line-height: 1.4;
+    }
+    .status.ok  { color: #4ade80; }
+    .status.err { color: #f87171; }
+    .trial-badge {
+      display: inline-block; font-size: 10px; background: #f59e0b22;
+      color: #fbbf24; border: 1px solid #f59e0b44; border-radius: 4px;
+      padding: 2px 6px; margin-bottom: 12px;
+    }
+    .tip { margin-top: 12px; font-size: 11px; color: #64748b; line-height: 1.45; }
+    a { color: #38bdf8; }
+  </style>
+</head>
+<body>
+  <h1>VoiceBridge</h1>
+  <p class="sub">Real-time voice translation for Google Meet</p>
+
+  <label for="license-key">License Key</label>
+  <input type="text" id="license-key" placeholder="VB-M-XXXX-XXXX-XXXX" autocomplete="off">
+  <div id="trial-info" class="trial-badge">No key = 5 min free trial per session</div>
+
+  <div class="lang-row">
+    <div>
+      <label for="src-lang">I speak</label>
+      <select id="src-lang"></select>
+    </div>
+    <div class="lang-arrow">→</div>
+    <div>
+      <label for="tgt-lang">They hear</label>
+      <select id="tgt-lang"></select>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="btn-start">Start</button>
+    <button id="btn-stop">Stop</button>
+  </div>
+  <button id="btn-save">Save Settings</button>
+
+  <div class="status" id="status">Open a Google Meet tab, then click Start.</div>
+
+  <p class="tip">
+    In Meet → Settings → Microphone, select <strong style="color:#e2e8f0">VoiceBridge Microphone</strong> for the desktop app, or keep default for extension-only mode.<br><br>
+    Get a license at <a href="https://voicebridge.app/pricing" target="_blank">voicebridge.app</a>
+  </p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

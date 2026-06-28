@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# Build outputs
+dist/
+build/
+*.dmg
+*.exe
+*.pkg
+out/
+.next/
+drivers/macos/build/
+drivers/windows/build/
+core/build/
+
+# Secrets
+.env
+*.pem
+*.key
+*.p12
+*.cer
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+._*
+
+# Archives (kept locally, not in git)
+_archive/
+
+# Python
+*.egg-info/
+.pytest_cache/
+
+# Editor
+.vscode/settings.json
+.idea/

@@ -1,0 +1,16 @@
+{
+  "name": "@voicebridge/core",
+  "version": "1.0.0",
+  "description": "VoiceBridge C++ audio pipeline native addon",
+  "main": "index.js",
+  "scripts": {
+    "build":   "node-gyp configure build",
+    "rebuild": "node-gyp rebuild",
+    "install": "node-gyp rebuild"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.0.0"
+  },
+  "gypfile": true,
+  "private": true
+}
