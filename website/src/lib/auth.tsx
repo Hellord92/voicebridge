@@ -14,7 +14,7 @@ import {
   onAuthStateChanged,
   type User,
 } from 'firebase/auth';
-import { getFirebaseAuth } from './firebase';
+import { getFirebaseAuth, firebaseReady } from './firebase';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'https://api.voicebridgeapps.com';
 
@@ -40,6 +40,7 @@ interface AuthCtx {
   user:           User | null;
   account:        Account | null;
   loading:        boolean;
+  ready:          boolean;
   signInGoogle:   () => Promise<void>;
   signOut:        () => Promise<void>;
   refreshAccount: () => Promise<void>;
@@ -50,7 +51,7 @@ const Ctx = createContext<AuthCtx | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user,    setUser]    = useState<User | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(firebaseReady); // false when Firebase not configured
 
   const fetchAccount = useCallback(async (u: User) => {
     try {
@@ -66,8 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // getFirebaseAuth() is only called inside useEffect → runs in browser only
+    if (!firebaseReady) return; // No Firebase config — skip silently
+
     const auth = getFirebaseAuth();
+    if (!auth) return;
+
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) await fetchAccount(u);
@@ -78,7 +82,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchAccount]);
 
   const signInGoogle = async () => {
-    const auth     = getFirebaseAuth();
+    const auth = getFirebaseAuth();
+    if (!auth) throw new Error('Firebase not configured');
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     const result = await signInWithPopup(auth, provider);
@@ -86,7 +91,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await fbSignOut(getFirebaseAuth());
+    const auth = getFirebaseAuth();
+    if (auth) await fbSignOut(auth);
+    setUser(null);
     setAccount(null);
   };
 
@@ -95,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, fetchAccount]);
 
   return (
-    <Ctx.Provider value={{ user, account, loading, signInGoogle, signOut, refreshAccount }}>
+    <Ctx.Provider value={{ user, account, loading, ready: firebaseReady, signInGoogle, signOut, refreshAccount }}>
       {children}
     </Ctx.Provider>
   );

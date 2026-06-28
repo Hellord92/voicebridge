@@ -11,18 +11,27 @@ const firebaseConfig = {
   appId:             process.env.NEXT_PUBLIC_FIREBASE_APP_ID              ?? '',
 };
 
-// Firebase must only be initialised in the browser — it uses browser APIs
-// (IndexedDB, fetch, etc.) that do not exist in the Node.js SSR environment.
-function getFirebaseApp(): FirebaseApp {
-  if (getApps().length) return getApps()[0];
-  return initializeApp(firebaseConfig);
+const firebaseReady = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+
+function getFirebaseApp(): FirebaseApp | null {
+  if (!firebaseReady) return null;
+  try {
+    if (getApps().length) return getApps()[0];
+    return initializeApp(firebaseConfig);
+  } catch {
+    return null;
+  }
 }
 
-// Export a getter so modules that import this file don't trigger initialisation
-// at module-evaluation time (which runs on the server during prerender).
-export function getFirebaseAuth(): Auth {
-  return getAuth(getFirebaseApp());
+export function getFirebaseAuth(): Auth | null {
+  const app = getFirebaseApp();
+  if (!app) return null;
+  try {
+    return getAuth(app);
+  } catch {
+    return null;
+  }
 }
 
-// Lazy singleton – only accessed in browser via 'use client' components
+export { firebaseReady };
 export default getFirebaseApp;
