@@ -49,12 +49,45 @@ function useTilt(max = 14) {
 }
 
 /* ── Language data ────────────────────────────────────────────────────────── */
-const LANGS = [
+const LANGS_ROW1 = [
   '🇬🇧 English','🇹🇷 Turkish','🇪🇸 Spanish','🇫🇷 French','🇩🇪 German',
   '🇵🇹 Portuguese','🇮🇳 Hindi','🇨🇳 Chinese','🇯🇵 Japanese','🇸🇦 Arabic',
-  '🇰🇷 Korean','🇮🇹 Italian','🇷🇺 Russian','🇳🇱 Dutch','🇵🇱 Polish',
-  '🇸🇪 Swedish','🇳🇴 Norwegian','🇩🇰 Danish','🇫🇮 Finnish','🇺🇦 Ukrainian',
+  '🇰🇷 Korean','🇮🇹 Italian',
 ];
+const LANGS_ROW2 = [
+  '🇷🇺 Russian','🇳🇱 Dutch','🇵🇱 Polish','🇸🇪 Swedish','🇳🇴 Norwegian',
+  '🇩🇰 Danish','🇫🇮 Finnish','🇺🇦 Ukrainian','🇻🇳 Vietnamese','🇹🇭 Thai',
+  '🇮🇩 Indonesian','🇲🇾 Malay',
+];
+
+/* ── Animated stat counter ───────────────────────────────────────────────── */
+function StatCounter({ value, suffix = '', prefix = '', label }: { value: number; suffix?: string; prefix?: string; label: string }) {
+  const ref = useRef(null);
+  const inView = useInView(ref, { once: true });
+  const [display, setDisplay] = useState(0);
+
+  useEffect(() => {
+    if (!inView) return;
+    const start = Date.now();
+    const duration = 1200;
+    const raf = requestAnimationFrame(function tick() {
+      const progress = Math.min((Date.now() - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - progress, 3);
+      setDisplay(parseFloat((value * ease).toFixed(value % 1 !== 0 ? 1 : 0)));
+      if (progress < 1) requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [inView, value]);
+
+  return (
+    <div ref={ref} className="text-left">
+      <div className="text-2xl font-extrabold text-white tabular-nums">
+        {prefix}{display}{suffix}
+      </div>
+      <div className="text-xs text-slate-500 mt-0.5">{label}</div>
+    </div>
+  );
+}
 
 /* ── Live translation demo pairs ─────────────────────────────────────────── */
 const PAIRS = [
@@ -88,8 +121,10 @@ export default function HomePage() {
 function Hero({ t }: { t: ReturnType<typeof useTranslations> }) {
   const ref = useRef(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end start'] });
-  const textY   = useTransform(scrollYProgress, [0, 1], [0, 110]);
-  const textOp  = useTransform(scrollYProgress, [0, 0.55], [1, 0]);
+  const textY    = useTransform(scrollYProgress, [0, 1],    [0, 110]);
+  const textOp   = useTransform(scrollYProgress, [0, 0.55], [1, 0]);
+  const micY     = useTransform(scrollYProgress, [0, 0.5],  [0, -80]);
+  const micOp    = useTransform(scrollYProgress, [0, 0.45], [1, 0]);
 
   return (
     <section ref={ref} className="relative min-h-screen flex flex-col overflow-hidden bg-[#0a0a12]">
@@ -105,7 +140,7 @@ function Hero({ t }: { t: ReturnType<typeof useTranslations> }) {
 
         {/* Left: copy (40%) */}
         <motion.div style={{ y: textY, opacity: textOp }}
-          className="text-center lg:text-left order-2 lg:order-1 flex flex-col justify-center py-16 lg:py-0 lg:pr-8">
+          className="text-center lg:text-left order-1 lg:order-1 flex flex-col justify-center py-16 lg:py-0 lg:pr-8">
 
           <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, ease: 'backOut' }}
@@ -151,21 +186,34 @@ function Hero({ t }: { t: ReturnType<typeof useTranslations> }) {
             </Link>
           </motion.div>
 
-          {/* Badge row */}
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }}
-            className="text-xs text-slate-600 font-medium">
-            &lt;1.2s latency · 50 languages · 99.9% uptime
-          </motion.p>
+          {/* Stats row — animated counters */}
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.9, duration: 0.6 }}
+            className="flex flex-wrap gap-6 justify-center lg:justify-start">
+            {[
+              { value: 50,   suffix: '+', label: 'Languages' },
+              { value: 1.2,  prefix: '<', suffix: 's', label: 'Latency' },
+              { value: 99.9, suffix: '%', label: 'Uptime' },
+            ].map((s) => (
+              <StatCounter key={s.label} {...s} />
+            ))}
+          </motion.div>
         </motion.div>
 
-        {/* Right: 3D Mic (60%) */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        {/* Right: 3D Mic (60%) — rises + fades on scroll */}
+        <motion.div
+          style={{ y: micY, opacity: micOp }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
           transition={{ duration: 1.4, delay: 0.2 }}
-          className="order-1 lg:order-2 h-[480px] sm:h-[580px] lg:h-screen w-full relative">
-          {/* Glow behind mic */}
-          <div className="absolute inset-0 pointer-events-none"
+          className="order-2 lg:order-2 h-[260px] sm:h-[340px] lg:h-screen w-full relative">
+          {/* On mobile: hide 3D, show gradient instead */}
+          <div className="absolute inset-0 md:hidden rounded-3xl"
+            style={{ background: 'radial-gradient(ellipse 80% 80% at 50% 50%, rgba(0,200,255,0.12) 0%, rgba(124,58,237,0.08) 50%, transparent 100%)' }} />
+          <div className="hidden md:block absolute inset-0 pointer-events-none"
             style={{ background: 'radial-gradient(ellipse 50% 50% at 50% 55%, rgba(0,200,255,0.06) 0%, transparent 70%)' }} />
-          <MicScene />
+          <div className="hidden md:block w-full h-full">
+            <MicScene />
+          </div>
 
           {/* Live translation glass card — bottom left */}
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
@@ -297,8 +345,10 @@ function HowItWorks({ t }: { t: ReturnType<typeof useTranslations> }) {
           <p className="text-slate-400 text-xl">{t('how_sub')}</p>
         </FadeUp>
         <div className="grid md:grid-cols-3 gap-6 relative">
-          <div className="hidden md:block absolute top-10 left-[calc(16.67%+1rem)] right-[calc(16.67%+1rem)] h-px"
-            style={{ background: 'linear-gradient(90deg, rgba(0,200,255,0.3), rgba(124,58,237,0.3), rgba(16,185,129,0.3))' }} />
+          {/* Dotted connecting line between cards */}
+          <div className="hidden md:block absolute top-10 left-[calc(16.67%+1.5rem)] right-[calc(16.67%+1.5rem)]"
+            style={{ height: '2px', backgroundImage: 'linear-gradient(90deg, rgba(0,200,255,0.4) 0%, rgba(124,58,237,0.4) 50%, rgba(16,185,129,0.4) 100%)',
+              maskImage: 'repeating-linear-gradient(90deg, black 0px, black 6px, transparent 6px, transparent 14px)' }} />
           {steps.map((s, i) => (
             <FadeUp key={i} delay={i * 0.15}>
               <TiltCard glowColor={s.glow} className="group relative rounded-2xl p-7 h-full"
@@ -319,22 +369,24 @@ function HowItWorks({ t }: { t: ReturnType<typeof useTranslations> }) {
 }
 
 /* ── TiltCard ─────────────────────────────────────────────────────────────── */
-function TiltCard({ children, className = '', style = {}, glowColor = 'rgba(0,200,255,0.15)' }:
-  { children: React.ReactNode; className?: string; style?: React.CSSProperties; glowColor?: string }) {
+function TiltCard({ children, className = '', style = {}, glowColor = 'rgba(0,200,255,0.15)', lift = false }:
+  { children: React.ReactNode; className?: string; style?: React.CSSProperties; glowColor?: string; lift?: boolean }) {
   const { ref, onMouseMove, onMouseLeave: tiltLeave } = useTilt(12);
 
   const handleEnter = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.currentTarget.style.boxShadow = `0 20px 60px ${glowColor}, 0 0 0 1px rgba(0,200,255,0.15)`;
+    e.currentTarget.style.boxShadow = `0 20px 60px ${glowColor}, 0 0 0 1px rgba(0,200,255,0.20)`;
+    if (lift) e.currentTarget.style.borderColor = 'rgba(0,200,255,0.35)';
   };
   const handleLeave = (e: React.MouseEvent<HTMLDivElement>) => {
     e.currentTarget.style.boxShadow = 'none';
+    if (lift) e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)';
     tiltLeave();
   };
 
   return (
     <div ref={ref} onMouseMove={onMouseMove} onMouseEnter={handleEnter} onMouseLeave={handleLeave}
       className={className}
-      style={{ ...style, transition: 'transform 0.15s ease, box-shadow 0.3s ease', willChange: 'transform' }}>
+      style={{ ...style, transition: 'transform 0.18s ease, box-shadow 0.3s ease, border-color 0.3s ease', willChange: 'transform' }}>
       {children}
     </div>
   );
@@ -363,7 +415,7 @@ function Features({ t }: { t: ReturnType<typeof useTranslations> }) {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {feats.map((f, i) => (
             <FadeUp key={f.title} delay={i * 0.08}>
-              <TiltCard glowColor={f.glow}
+              <TiltCard glowColor={f.glow} lift
                 className="group relative rounded-2xl p-7 h-full overflow-hidden cursor-default"
                 style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(8px)' }}>
                 <div className={`absolute inset-0 bg-gradient-to-br ${f.gradient} opacity-0 group-hover:opacity-[0.06] transition-opacity duration-500`} />
@@ -382,36 +434,44 @@ function Features({ t }: { t: ReturnType<typeof useTranslations> }) {
   );
 }
 
-/* ── Languages ────────────────────────────────────────────────────────────── */
+/* ── Languages — infinite marquee ────────────────────────────────────────── */
+function LangPill({ label }: { label: string }) {
+  return (
+    <span className="flex-shrink-0 px-4 py-2 mx-2 rounded-full text-sm font-medium select-none"
+      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', whiteSpace: 'nowrap' }}>
+      {label}
+    </span>
+  );
+}
+function MarqueeRow({ items, reverse = false }: { items: string[]; reverse?: boolean }) {
+  const doubled = [...items, ...items];
+  return (
+    <div className="overflow-hidden" style={{ maskImage: 'linear-gradient(90deg, transparent 0%, black 8%, black 92%, transparent 100%)' }}>
+      <div className={`flex ${reverse ? 'marquee-right' : 'marquee-left'}`} style={{ width: 'max-content' }}>
+        {doubled.map((lang, i) => <LangPill key={`${lang}-${i}`} label={lang} />)}
+      </div>
+    </div>
+  );
+}
 function Languages({ t }: { t: ReturnType<typeof useTranslations> }) {
   return (
-    <section className="py-32 px-6" style={{ background: 'rgba(255,255,255,0.01)' }}>
-      <div className="max-w-5xl mx-auto text-center">
+    <section className="py-32 overflow-hidden" style={{ background: 'rgba(255,255,255,0.01)' }}>
+      <div className="max-w-5xl mx-auto text-center px-6 mb-14">
         <FadeUp>
           <h2 className="text-4xl md:text-6xl font-extrabold mb-4">{t('langs_title')}</h2>
-          <p className="text-slate-400 mb-14 text-xl">{t('langs_sub')}</p>
+          <p className="text-slate-400 text-xl">{t('langs_sub')}</p>
         </FadeUp>
-        <div className="flex flex-wrap gap-3 justify-center">
-          {LANGS.map((lang, i) => (
-            <motion.span key={lang} initial={{ opacity:0, scale:0.8 }}
-              whileInView={{ opacity:1, scale:1 }} viewport={{ once:true }}
-              transition={{ duration:0.3, delay: i * 0.04 }}
-              whileHover={{ scale:1.1, y:-2 }}
-              className="px-4 py-2 rounded-full text-sm font-medium cursor-default transition-colors"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}
-              onMouseEnter={e => { (e.target as HTMLElement).style.borderColor = 'rgba(0,200,255,0.35)'; (e.target as HTMLElement).style.color = '#fff'; }}
-              onMouseLeave={e => { (e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.08)'; (e.target as HTMLElement).style.color = '#94a3b8'; }}>
-              {lang}
-            </motion.span>
-          ))}
-          <motion.span initial={{ opacity:0 }} whileInView={{ opacity:1 }} viewport={{ once:true }}
-            transition={{ delay: LANGS.length * 0.04 }}
-            className="px-4 py-2 rounded-full text-sm font-semibold"
-            style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: '#67e8f9' }}>
-            +30 more
-          </motion.span>
-        </div>
       </div>
+      <div className="space-y-4">
+        <MarqueeRow items={LANGS_ROW1} />
+        <MarqueeRow items={LANGS_ROW2} reverse />
+      </div>
+      <FadeIn className="text-center mt-10">
+        <span className="px-4 py-2 rounded-full text-sm font-semibold"
+          style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: '#67e8f9' }}>
+          +30 more languages
+        </span>
+      </FadeIn>
     </section>
   );
 }
@@ -428,54 +488,76 @@ function FlipCard({ name, price, minutes, highlight, badge }:
   { name: string; price: string; minutes: number; highlight: boolean; badge: string | null }) {
   const feats = PLAN_FEATURES[name] ?? [];
   const perMin = name === 'Free' ? '0' : (parseInt(price.replace('$','')) / minutes).toFixed(2);
+  const tilt = useTilt(10);
+
+  const inner = (
+    <div className="relative w-full h-full"
+      style={{ transformStyle: 'preserve-3d', transition: 'transform 0.65s cubic-bezier(0.22,1,0.36,1)' }}
+      onMouseEnter={e => (e.currentTarget.style.transform = 'rotateY(180deg)')}
+      onMouseLeave={e => (e.currentTarget.style.transform = 'rotateY(0deg)')}>
+      {/* Front */}
+      <div className="absolute inset-0 rounded-2xl p-6 flex flex-col"
+        style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
+          background: highlight ? 'rgba(0,200,255,0.06)' : 'rgba(255,255,255,0.03)',
+          border: highlight ? '1px solid rgba(0,200,255,0.3)' : '1px solid rgba(255,255,255,0.07)' }}>
+        <div className="font-bold text-lg mb-1 text-white">{name}</div>
+        <div className="text-4xl font-extrabold text-white my-3">{price}</div>
+        <div className="text-xs text-slate-500 mb-6">{minutes} min · ${perMin}/min</div>
+        <Link href={name === 'Free' ? '/dashboard' : '/pricing'}
+          className="mt-auto block w-full py-3 rounded-xl text-center text-sm font-bold transition-all active:scale-95"
+          style={highlight
+            ? { background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', color: '#000' }
+            : { background: 'rgba(255,255,255,0.08)', color: '#e2e8f0' }}>
+          {name === 'Free' ? 'Start Free' : 'Buy Now'}
+        </Link>
+      </div>
+      {/* Back */}
+      <div className="absolute inset-0 rounded-2xl p-6 flex flex-col justify-center"
+        style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
+          transform: 'rotateY(180deg)',
+          background: 'rgba(0,200,255,0.05)',
+          border: '1px solid rgba(0,200,255,0.2)' }}>
+        <div className="font-bold text-white mb-4">{name} &mdash; What&apos;s included</div>
+        <ul className="space-y-2">
+          {feats.map(f => (
+            <li key={f} className="flex items-center gap-2 text-sm text-slate-300">
+              <span style={{ color: '#00c8ff' }}>✓</span> {f}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+
+  if (highlight) {
+    return (
+      <div className="group relative" style={{ perspective: '1000px', height: '260px' }}>
+        {badge && (
+          <span className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 text-xs font-bold px-3 py-0.5 rounded-full whitespace-nowrap"
+            style={{ background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', color: '#fff' }}>
+            {badge}
+          </span>
+        )}
+        {/* Float + pulse glow for Most Popular */}
+        <motion.div className="w-full h-full popular-glow rounded-2xl"
+          animate={{ y: [0, -8, 0] }}
+          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}>
+          {inner}
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
-    <div className="group relative" style={{ perspective: '1000px', height: '260px' }}>
+    <div ref={tilt.ref} onMouseMove={tilt.onMouseMove} onMouseLeave={tilt.onMouseLeave}
+      className="group relative" style={{ perspective: '1000px', height: '260px', transition: 'transform 0.15s ease', willChange: 'transform' }}>
       {badge && (
         <span className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 text-xs font-bold px-3 py-0.5 rounded-full whitespace-nowrap"
           style={{ background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', color: '#fff' }}>
           {badge}
         </span>
       )}
-      <div className="relative w-full h-full"
-        style={{ transformStyle: 'preserve-3d', transition: 'transform 0.65s cubic-bezier(0.22,1,0.36,1)' }}
-        onMouseEnter={e => (e.currentTarget.style.transform = 'rotateY(180deg)')}
-        onMouseLeave={e => (e.currentTarget.style.transform = 'rotateY(0deg)')}>
-
-        {/* Front */}
-        <div className="absolute inset-0 rounded-2xl p-6 flex flex-col"
-          style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
-            background: highlight ? 'rgba(0,200,255,0.06)' : 'rgba(255,255,255,0.03)',
-            border: highlight ? '1px solid rgba(0,200,255,0.3)' : '1px solid rgba(255,255,255,0.07)',
-            boxShadow: highlight ? '0 0 40px rgba(0,200,255,0.08)' : 'none' }}>
-          <div className="font-bold text-lg mb-1 text-white">{name}</div>
-          <div className="text-4xl font-extrabold text-white my-3">{price}</div>
-          <div className="text-xs text-slate-500 mb-6">{minutes} min · ${perMin}/min</div>
-          <Link href={name === 'Free' ? '/dashboard' : '/pricing'}
-            className="mt-auto block w-full py-3 rounded-xl text-center text-sm font-bold transition-all active:scale-95"
-            style={highlight
-              ? { background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', color: '#000' }
-              : { background: 'rgba(255,255,255,0.08)', color: '#e2e8f0' }}>
-            {name === 'Free' ? 'Start Free' : 'Buy Now'}
-          </Link>
-        </div>
-
-        {/* Back */}
-        <div className="absolute inset-0 rounded-2xl p-6 flex flex-col justify-center"
-          style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
-            transform: 'rotateY(180deg)',
-            background: 'rgba(0,200,255,0.05)',
-            border: '1px solid rgba(0,200,255,0.2)' }}>
-          <div className="font-bold text-white mb-4">{name} &mdash; What&apos;s included</div>
-          <ul className="space-y-2">
-            {feats.map(f => (
-              <li key={f} className="flex items-center gap-2 text-sm text-slate-300">
-                <span style={{ color: '#00c8ff' }}>✓</span> {f}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
+      {inner}
     </div>
   );
 }
@@ -555,8 +637,15 @@ function CtaBanner({ t }: { t: ReturnType<typeof useTranslations> }) {
 /* ── Footer ───────────────────────────────────────────────────────────────── */
 function Footer({ t }: { t: ReturnType<typeof useTranslations> }) {
   return (
-    <footer className="py-14 px-6" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)' }}>
-      <div className="max-w-6xl mx-auto">
+    <footer className="relative py-14 px-6 footer-grid overflow-hidden"
+      style={{ background: 'rgba(5,5,14,0.95)', backdropFilter: 'blur(8px)' }}>
+      {/* Cyan gradient line at top */}
+      <div className="absolute top-0 left-0 right-0 h-px"
+        style={{ background: 'linear-gradient(90deg, transparent, rgba(0,200,255,0.6) 30%, rgba(124,58,237,0.6) 70%, transparent)' }} />
+      {/* Subtle bottom glow */}
+      <div className="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] blur-[80px]"
+        style={{ background: 'radial-gradient(ellipse, rgba(0,200,255,0.04) 0%, transparent 70%)' }} />
+      <div className="relative z-10 max-w-6xl mx-auto">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-10 mb-10">
           <div className="col-span-2 md:col-span-1">
             <span className="font-extrabold text-xl" style={{ color: '#00c8ff' }}>VoiceBridge</span>
