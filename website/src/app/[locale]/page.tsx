@@ -75,17 +75,18 @@ function Hero({ t }: { t: ReturnType<typeof useTranslations> }) {
   const opacity = useTransform(scrollYProgress, [0, 0.55], [1, 0]);
 
   return (
-    <section ref={ref} className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-[#04080f]">
+    <section ref={ref} className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-black">
 
-      {/* ── Full-screen fiber canvas (absolute behind everything) ── */}
+      {/* ── Full-screen fiber canvas ── */}
       <div className="absolute inset-0 z-0">
         <FiberScene />
       </div>
 
-      {/* ── Dark gradient vignette so text stays readable ── */}
-      <div className="absolute inset-0 z-10 pointer-events-none bg-[radial-gradient(ellipse_80%_60%_at_50%_50%,transparent_30%,#04080f_100%)]" />
-      {/* bottom fade into next section */}
-      <div className="absolute bottom-0 left-0 right-0 h-48 z-10 pointer-events-none bg-gradient-to-t from-[#04080f] to-transparent" />
+      {/* ── Top + side vignettes keep centre readable ── */}
+      <div className="absolute inset-0 z-10 pointer-events-none"
+           style={{ background: 'radial-gradient(ellipse 70% 55% at 50% 48%, transparent 20%, rgba(0,0,0,0.92) 100%)' }} />
+      {/* bottom fade */}
+      <div className="absolute bottom-0 left-0 right-0 h-56 z-10 pointer-events-none bg-gradient-to-t from-black to-transparent" />
 
       {/* ── Floating copy (centred, above canvas) ── */}
       <motion.div
