@@ -1,4 +1,3 @@
-from __future__ import annotations
 """
 VoiceBridge API Server — v2 (minute-based, crypto + IBAN payments)
 
