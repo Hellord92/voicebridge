@@ -42,3 +42,5 @@ _archive/
 .vscode/settings.json
 .idea/
 website/.env.local
+*.db
+server/voicebridge.db
