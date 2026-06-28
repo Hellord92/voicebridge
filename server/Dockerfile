@@ -6,11 +6,9 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY server/requirements.txt ./requirements.txt
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY server/ ./server/
-
-WORKDIR /app/server
+COPY . .
 
 CMD ["sh", "-c", "echo Starting VoiceBridge on PORT=${PORT:-8080} && exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
