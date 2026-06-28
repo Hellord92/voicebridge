@@ -9,7 +9,5 @@ COPY server/ ./server/
 
 WORKDIR /app/server
 
-ENV PORT=8080
-EXPOSE 8080
-
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# Railway injects PORT at runtime — never hardcode 8080
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
