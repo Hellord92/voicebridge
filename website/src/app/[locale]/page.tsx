@@ -69,7 +69,7 @@ function Hero({ t }: { t: ReturnType<typeof useTranslations> }) {
         {/* CTAs */}
         <div className="flex flex-col sm:flex-row gap-4 justify-center mb-20">
           <Link
-            href="/download"
+            href="/dashboard"
             className="group relative px-8 py-4 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-semibold text-base transition-all shadow-lg shadow-sky-500/30 hover:shadow-sky-500/50 hover:-translate-y-0.5"
           >
             {t('hero_cta_primary')}
@@ -371,7 +371,7 @@ function CtaBanner({ t }: { t: ReturnType<typeof useTranslations> }) {
         <p className="text-slate-400 text-lg mb-10">{t('cta_sub')}</p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link
-            href="/download"
+            href="/dashboard"
             className="px-8 py-4 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-semibold text-base transition-all shadow-lg shadow-sky-500/30 hover:-translate-y-0.5"
           >
             {t('cta_primary')}

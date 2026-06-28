@@ -8,12 +8,12 @@
   "nav_signin":      "Giriş yap",
   "nav_dashboard":   "Hesabım",
   "nav_signout":     "Çıkış yap",
-  "nav_cta":         "Ücretsiz İndir",
+  "nav_cta":         "Ücretsiz Başla",
 
-  "hero_badge":          "5 dakika ücretsiz · Hesap gerekmez",
+  "hero_badge":          "Üye ol — 5 dakika ücretsiz kredi al",
   "hero_headline":       "İstediğin dilde konuş.\nKarşı taraf kendi dilinde duysun.",
   "hero_sub":            "VoiceBridge sesinizi gerçek zamanlı çevirir — Zoom, Meet, Teams veya istediğin toplantı platformu. Sanal ses kablosu yok, karmaşık kurulum yok. Sadece indir ve konuş.",
-  "hero_cta_primary":    "Ücretsiz İndir",
+  "hero_cta_primary":    "Ücretsiz Başla",
   "hero_cta_secondary":  "Nasıl çalışır?",
 
   "stats_langs":     "50 Dil",
@@ -57,7 +57,7 @@
 
   "cta_title":       "60 saniyede çeviriye başla",
   "cta_sub":         "VoiceBridge'i ücretsiz indir. Denemek için hesap gerekmez.",
-  "cta_primary":     "Ücretsiz İndir",
+  "cta_primary":     "Ücretsiz Hesap Oluştur",
   "cta_secondary":   "Fiyatları Gör",
 
   "footer_tagline":  "Küresel ekipler için gerçek zamanlı ses çevirisi.",

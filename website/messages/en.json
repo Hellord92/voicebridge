@@ -8,12 +8,12 @@
   "nav_signin":      "Sign in",
   "nav_dashboard":   "Dashboard",
   "nav_signout":     "Sign out",
-  "nav_cta":         "Download Free",
+  "nav_cta":         "Get Started Free",
 
-  "hero_badge":          "5 minutes free · No account needed",
+  "hero_badge":          "Sign up free — get 5 minutes credit",
   "hero_headline":       "Speak any language.\nYour audience hears theirs.",
   "hero_sub":            "VoiceBridge translates your voice in real time — Zoom, Meet, Teams, or any meeting platform. No virtual audio cables. No setup headaches. Just install and talk.",
-  "hero_cta_primary":    "Download Free",
+  "hero_cta_primary":    "Get Started Free",
   "hero_cta_secondary":  "See how it works",
 
   "stats_langs":     "50 Languages",
@@ -56,8 +56,8 @@
   "pricing_teaser_cta":    "See all plans →",
 
   "cta_title":       "Start translating in 60 seconds",
-  "cta_sub":         "Download VoiceBridge free. No account required to try it.",
-  "cta_primary":     "Download Free",
+  "cta_sub":         "Create a free account and get 5 minutes of translation credit instantly.",
+  "cta_primary":     "Create Free Account",
   "cta_secondary":   "View Pricing",
 
   "footer_tagline":  "Real-time voice translation for global teams.",

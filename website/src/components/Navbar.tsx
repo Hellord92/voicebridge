@@ -56,7 +56,7 @@ export default function Navbar() {
                   {t('nav_signin')}
                 </button>
                 <Link
-                  href="/download"
+                  href="/dashboard"
                   className="text-sm font-semibold bg-sky-500 hover:bg-sky-400 text-white px-4 py-1.5 rounded-lg transition shadow-lg shadow-sky-500/20"
                 >
                   {t('nav_cta')}
