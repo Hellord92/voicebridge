@@ -1,3 +1,7 @@
-framework = "nextjs"
-build.command = "npm run build"
-build.publish = ".next"
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install",
+  "devCommand": "npm run dev"
+}
