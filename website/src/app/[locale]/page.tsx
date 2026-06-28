@@ -1,9 +1,12 @@
 'use client';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useRef, useEffect, useState } from 'react';
 import { motion, useInView, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../lib/auth';
+
+const GlobeScene = dynamic(() => import('../../components/GlobeScene'), { ssr: false });
 
 /* ─── Animation helpers ─────────────────────────────────────────────────── */
 function FadeUp({ children, delay = 0, className = '' }: { children: React.ReactNode; delay?: number; className?: string }) {
@@ -73,93 +76,128 @@ function Hero({ t }: { t: ReturnType<typeof useTranslations> }) {
   const opacity = useTransform(scrollYProgress, [0, 0.6], [1, 0]);
 
   return (
-    <section ref={ref} className="relative min-h-screen flex items-center justify-center pt-20 pb-16 px-6 overflow-hidden">
+    <section ref={ref} className="relative min-h-screen flex items-center pt-20 pb-16 px-6 overflow-hidden">
       {/* Animated gradient orbs */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         <motion.div
-          animate={{ scale: [1, 1.15, 1], opacity: [0.15, 0.25, 0.15] }}
+          animate={{ scale: [1, 1.15, 1], opacity: [0.18, 0.28, 0.18] }}
           transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute -top-40 left-1/2 -translate-x-1/2 w-[900px] h-[600px] rounded-full bg-sky-500 blur-[130px]"
+          className="absolute -top-40 left-1/4 w-[900px] h-[600px] rounded-full bg-sky-600 blur-[130px]"
         />
         <motion.div
-          animate={{ scale: [1.1, 1, 1.1], opacity: [0.08, 0.18, 0.08] }}
+          animate={{ scale: [1.1, 1, 1.1], opacity: [0.1, 0.2, 0.1] }}
           transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-          className="absolute top-20 -right-40 w-[600px] h-[500px] rounded-full bg-violet-600 blur-[120px]"
+          className="absolute top-20 right-0 w-[600px] h-[600px] rounded-full bg-violet-700 blur-[120px]"
         />
-        <motion.div
-          animate={{ scale: [1, 1.2, 1], opacity: [0.06, 0.14, 0.06] }}
-          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut', delay: 4 }}
-          className="absolute top-60 -left-40 w-[500px] h-[400px] rounded-full bg-cyan-500 blur-[110px]"
-        />
-        {/* Grid overlay */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.03)_1px,transparent_1px)] bg-[size:64px_64px]" />
       </div>
 
-      <motion.div style={{ y, opacity }} className="max-w-5xl mx-auto text-center w-full">
-        {/* Badge */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, ease: 'backOut' }}
-          className="inline-flex items-center gap-2 text-xs font-semibold bg-sky-500/10 text-sky-300 border border-sky-500/20 px-4 py-1.5 rounded-full mb-8 backdrop-blur-sm"
-        >
-          <motion.span
-            animate={{ scale: [1, 1.4, 1] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-            className="w-1.5 h-1.5 rounded-full bg-sky-400"
-          />
-          {t('hero_badge')}
-        </motion.div>
+      <motion.div style={{ y, opacity }} className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-8 items-center">
 
-        {/* Headline — word by word */}
-        <div className="mb-6 overflow-hidden">
+        {/* ── Left: copy ───────────────────────────────────── */}
+        <div className="text-center lg:text-left order-2 lg:order-1">
+          {/* Badge */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, ease: 'backOut' }}
+            className="inline-flex items-center gap-2 text-xs font-semibold bg-sky-500/10 text-sky-300 border border-sky-500/20 px-4 py-1.5 rounded-full mb-8 backdrop-blur-sm"
+          >
+            <motion.span
+              animate={{ scale: [1, 1.4, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              className="w-1.5 h-1.5 rounded-full bg-sky-400"
+            />
+            {t('hero_badge')}
+          </motion.div>
+
+          {/* Headline */}
           <motion.h1
             initial={{ opacity: 0, y: 60 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
-            className="text-5xl sm:text-7xl md:text-8xl font-extrabold tracking-tight leading-[1.0] whitespace-pre-line"
+            className="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.05] whitespace-pre-line mb-6"
           >
             <span className="bg-gradient-to-br from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
               {t('hero_headline')}
             </span>
           </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.35 }}
+            className="text-lg md:text-xl text-slate-400 max-w-xl mb-10 leading-relaxed mx-auto lg:mx-0"
+          >
+            {t('hero_sub')}
+          </motion.p>
+
+          {/* CTAs */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.5 }}
+            className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start"
+          >
+            <Link
+              href="/dashboard"
+              className="group relative overflow-hidden px-8 py-4 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold text-base transition-all shadow-lg shadow-sky-500/40 hover:shadow-sky-500/60 hover:-translate-y-1"
+            >
+              <span className="relative z-10">{t('hero_cta_primary')}</span>
+              <motion.div className="absolute inset-0 bg-gradient-to-r from-sky-400 to-violet-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            </Link>
+            <Link
+              href="#how"
+              className="px-8 py-4 rounded-xl border border-slate-700/80 hover:border-sky-500/40 bg-white/[0.04] hover:bg-white/[0.08] backdrop-blur-sm text-slate-300 hover:text-white font-medium text-base transition-all hover:-translate-y-1"
+            >
+              {t('hero_cta_secondary')} →
+            </Link>
+          </motion.div>
+
+          {/* Stats row */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.9 }}
+            className="flex gap-8 mt-12 justify-center lg:justify-start"
+          >
+            {[['50+', 'Languages'], ['<1.2s', 'Latency'], ['99.9%', 'Uptime']].map(([val, label]) => (
+              <div key={label} className="text-center">
+                <div className="text-2xl font-bold text-white">{val}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{label}</div>
+              </div>
+            ))}
+          </motion.div>
         </div>
 
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.35 }}
-          className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed"
-        >
-          {t('hero_sub')}
-        </motion.p>
-
-        {/* CTAs */}
+        {/* ── Right: 3D Globe ──────────────────────────────── */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.5 }}
-          className="flex flex-col sm:flex-row gap-4 justify-center mb-20"
+          initial={{ opacity: 0, scale: 0.85 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 1.2, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
+          className="relative order-1 lg:order-2 h-[380px] sm:h-[480px] lg:h-[580px] w-full"
         >
-          <Link
-            href="/dashboard"
-            className="group relative overflow-hidden px-8 py-4 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold text-base transition-all shadow-lg shadow-sky-500/40 hover:shadow-sky-500/60 hover:-translate-y-1"
+          {/* Glow behind globe */}
+          <div className="absolute inset-0 rounded-full bg-sky-500/10 blur-3xl scale-75" />
+          <GlobeScene />
+
+          {/* Floating labels */}
+          <motion.div
+            animate={{ y: [0, -8, 0] }}
+            transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+            className="absolute top-6 right-6 bg-slate-900/80 backdrop-blur border border-slate-700/60 rounded-xl px-3 py-2 text-xs font-semibold text-emerald-300 pointer-events-none hidden sm:block"
           >
-            <span className="relative z-10">{t('hero_cta_primary')}</span>
-            <motion.div
-              className="absolute inset-0 bg-gradient-to-r from-sky-400 to-violet-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-            />
-          </Link>
-          <Link
-            href="#how"
-            className="px-8 py-4 rounded-xl border border-slate-700/80 hover:border-sky-500/40 bg-white/[0.04] hover:bg-white/[0.08] backdrop-blur-sm text-slate-300 hover:text-white font-medium text-base transition-all hover:-translate-y-1"
+            ✓ 10 aktif bağlantı
+          </motion.div>
+          <motion.div
+            animate={{ y: [0, 8, 0] }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+            className="absolute bottom-16 left-6 bg-slate-900/80 backdrop-blur border border-slate-700/60 rounded-xl px-3 py-2 text-xs font-semibold text-sky-300 pointer-events-none hidden sm:block"
           >
-            {t('hero_cta_secondary')} →
-          </Link>
+            ⚡ Canlı çeviri
+          </motion.div>
         </motion.div>
 
-        {/* Microphone Hero Animation */}
-        <MicHero />
       </motion.div>
     </section>
   );
