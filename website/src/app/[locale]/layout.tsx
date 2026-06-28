@@ -1,13 +1,13 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { NextIntlClientProvider } from 'next-intl';
-import { getMessages } from 'next-intl/server';
+import { getMessages, setRequestLocale } from 'next-intl/server';
 import { locales } from '../../i18n';
 import { AuthProvider } from '../../lib/auth';
 import Navbar from '../../components/Navbar';
 import '../globals.css';
 
-export async function generateStaticParams() {
+export function generateStaticParams() {
   return locales.map(locale => ({ locale }));
 }
 
@@ -19,8 +19,8 @@ export async function generateMetadata({
   if (!locales.includes(params.locale)) notFound();
   const messages = await getMessages({ locale: params.locale });
   return {
-    title:       (messages as Record<string, string>).meta_title,
-    description: (messages as Record<string, string>).meta_description,
+    title:       (messages as Record<string, string>).meta_title       ?? 'VoiceBridge',
+    description: (messages as Record<string, string>).meta_description ?? 'Real-time voice translation',
   };
 }
 
@@ -32,6 +32,10 @@ export default async function LocaleLayout({
   params: { locale: string };
 }) {
   if (!locales.includes(params.locale)) notFound();
+
+  // Required by next-intl 3.22+ for static rendering support
+  setRequestLocale(params.locale);
+
   const messages = await getMessages({ locale: params.locale });
 
   return (

@@ -14,7 +14,7 @@ import {
   onAuthStateChanged,
   type User,
 } from 'firebase/auth';
-import { auth } from './firebase';
+import { getFirebaseAuth } from './firebase';
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'https://api.voicebridgeapps.com';
 
@@ -37,11 +37,11 @@ interface Account {
 }
 
 interface AuthCtx {
-  user:        User | null;
-  account:     Account | null;
-  loading:     boolean;
-  signInGoogle: () => Promise<void>;
-  signOut:     () => Promise<void>;
+  user:           User | null;
+  account:        Account | null;
+  loading:        boolean;
+  signInGoogle:   () => Promise<void>;
+  signOut:        () => Promise<void>;
   refreshAccount: () => Promise<void>;
 }
 
@@ -59,16 +59,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method:  'POST',
         headers: { Authorization: `Bearer ${idToken}` },
       });
-      if (res.ok) {
-        const data = await res.json();
-        setAccount(data);
-      }
+      if (res.ok) setAccount(await res.json());
     } catch (e) {
       console.error('[auth] fetchAccount error:', e);
     }
   }, []);
 
   useEffect(() => {
+    // getFirebaseAuth() is only called inside useEffect → runs in browser only
+    const auth = getFirebaseAuth();
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) await fetchAccount(u);
@@ -79,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchAccount]);
 
   const signInGoogle = async () => {
+    const auth     = getFirebaseAuth();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     const result = await signInWithPopup(auth, provider);
@@ -86,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await fbSignOut(auth);
+    await fbSignOut(getFirebaseAuth());
     setAccount(null);
   };
 
