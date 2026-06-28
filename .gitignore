@@ -41,3 +41,4 @@ _archive/
 # Editor
 .vscode/settings.json
 .idea/
+website/.env.local
