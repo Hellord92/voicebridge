@@ -1,8 +1,8 @@
 'use client';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useRef } from 'react';
-import { motion, useInView, useScroll, useTransform } from 'framer-motion';
+import { useRef, useEffect, useState } from 'react';
+import { motion, useInView, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../lib/auth';
 
 /* ─── Animation helpers ─────────────────────────────────────────────────── */
@@ -46,12 +46,6 @@ const LANGS = [
   '🇸🇪 Swedish','🇳🇴 Norwegian','🇩🇰 Danish','🇫🇮 Finnish','🇺🇦 Ukrainian',
 ];
 
-const PAIRS = [
-  { from: '🇹🇷 Turkish', to: '🇬🇧 English' },
-  { from: '🇩🇪 German',  to: '🇯🇵 Japanese' },
-  { from: '🇫🇷 French',  to: '🇸🇦 Arabic' },
-  { from: '🇪🇸 Spanish', to: '🇨🇳 Chinese' },
-];
 
 /* ─── Page ──────────────────────────────────────────────────────────────── */
 export default function HomePage() {
@@ -164,81 +158,176 @@ function Hero({ t }: { t: ReturnType<typeof useTranslations> }) {
           </Link>
         </motion.div>
 
-        {/* Floating app mockup */}
-        <motion.div
-          initial={{ opacity: 0, y: 60, scale: 0.9 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 1, delay: 0.6, ease: [0.22, 1, 0.36, 1] }}
-          className="relative inline-block"
-        >
-          <motion.div
-            animate={{ y: [0, -10, 0] }}
-            transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-            className="relative"
-          >
-            {/* Glow */}
-            <div className="absolute -inset-6 bg-gradient-to-b from-sky-500/20 to-violet-500/10 blur-3xl rounded-3xl" />
-
-            {/* Card */}
-            <div className="relative bg-slate-900/90 backdrop-blur-xl border border-slate-700/60 rounded-2xl p-5 shadow-2xl w-80 text-left">
-              {/* Window dots */}
-              <div className="flex items-center gap-1.5 mb-5">
-                <span className="w-3 h-3 rounded-full bg-rose-500/80" />
-                <span className="w-3 h-3 rounded-full bg-amber-400/80" />
-                <span className="w-3 h-3 rounded-full bg-emerald-500/80" />
-                <span className="ml-3 text-sm font-bold text-sky-400">VoiceBridge</span>
-              </div>
-
-              {/* Lang pairs */}
-              <div className="space-y-3 mb-4">
-                {PAIRS.map((p, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.8 + i * 0.12 }}
-                    className="flex items-center gap-2 text-sm"
-                  >
-                    <span className="text-slate-400 w-28 truncate text-xs">{p.from}</span>
-                    <svg className="w-3 h-3 text-sky-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                    </svg>
-                    <span className="text-slate-200 w-28 text-right truncate text-xs">{p.to}</span>
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* Active indicator */}
-              <div className="flex items-center gap-2.5 bg-sky-500/10 border border-sky-500/20 rounded-xl px-3 py-2.5">
-                <motion.div
-                  animate={{ scale: [1, 1.3, 1] }}
-                  transition={{ duration: 1.2, repeat: Infinity }}
-                  className="w-2 h-2 rounded-full bg-sky-400"
-                />
-                <span className="text-xs text-sky-300 font-semibold">Translating live…</span>
-                <span className="ml-auto text-xs text-slate-500 font-mono">0.9s</span>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Floating badges */}
-          <motion.div
-            animate={{ y: [0, -8, 0], rotate: [-1, 1, -1] }}
-            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-            className="absolute -right-16 top-4 bg-emerald-500/10 border border-emerald-500/30 backdrop-blur rounded-xl px-3 py-1.5 text-xs font-semibold text-emerald-300 hidden md:block"
-          >
-            ✓ 50 languages
-          </motion.div>
-          <motion.div
-            animate={{ y: [0, 8, 0], rotate: [1, -1, 1] }}
-            transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-            className="absolute -left-20 bottom-8 bg-violet-500/10 border border-violet-500/30 backdrop-blur rounded-xl px-3 py-1.5 text-xs font-semibold text-violet-300 hidden md:block"
-          >
-            ⚡ &lt; 1.2s latency
-          </motion.div>
-        </motion.div>
+        {/* Microphone Hero Animation */}
+        <MicHero />
       </motion.div>
     </section>
+  );
+}
+
+/* ─── Mic animation hero ─────────────────────────────────────────────────── */
+const TRANSLATION_PAIRS = [
+  { from: '🇹🇷 Türkçe konuşuyorum...', to: '🇬🇧 I am speaking Turkish...' },
+  { from: '🇩🇪 Ich spreche Deutsch...', to: '🇯🇵 ドイツ語を話しています...' },
+  { from: '🇫🇷 Je parle français...', to: '🇸🇦 أنا أتحدث الفرنسية...' },
+  { from: '🇪🇸 Estoy hablando español...', to: '🇨🇳 我在说西班牙语...' },
+];
+
+const EQ_BARS = [3, 7, 5, 9, 4, 8, 6, 10, 5, 7, 3, 8, 6, 4, 9];
+
+function MicHero() {
+  const [pairIdx, setPairIdx] = useState(0);
+  const [speaking, setSpeaking] = useState(true);
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setSpeaking(false);
+      setTimeout(() => {
+        setPairIdx(i => (i + 1) % TRANSLATION_PAIRS.length);
+        setSpeaking(true);
+      }, 600);
+    }, 3200);
+    return () => clearInterval(iv);
+  }, []);
+
+  const pair = TRANSLATION_PAIRS[pairIdx];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 60 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 1, delay: 0.55, ease: [0.22, 1, 0.36, 1] }}
+      className="relative flex flex-col items-center gap-8 mt-4"
+    >
+      {/* Microphone orb */}
+      <div className="relative flex items-center justify-center">
+        {/* Expanding sound rings */}
+        {[0, 1, 2, 3].map(i => (
+          <motion.div
+            key={i}
+            className="absolute rounded-full border border-sky-400/30"
+            animate={{ scale: [1, 2.4 + i * 0.4], opacity: [0.5, 0] }}
+            transition={{ duration: 2.2, delay: i * 0.5, repeat: Infinity, ease: 'easeOut' }}
+            style={{ width: 90, height: 90 }}
+          />
+        ))}
+
+        {/* Inner glow */}
+        <motion.div
+          animate={{ scale: [1, 1.15, 1], opacity: [0.6, 1, 0.6] }}
+          transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute w-28 h-28 rounded-full bg-sky-500/20 blur-xl"
+        />
+
+        {/* Mic button */}
+        <motion.div
+          animate={{ scale: speaking ? [1, 1.06, 1] : 1 }}
+          transition={{ duration: 0.4, repeat: speaking ? Infinity : 0 }}
+          className="relative z-10 w-20 h-20 rounded-full bg-gradient-to-br from-sky-500 to-violet-600 shadow-2xl shadow-sky-500/50 flex items-center justify-center"
+        >
+          <svg className="w-9 h-9 text-white" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm-1 17.93A8.001 8.001 0 0 1 4.07 12H2a10 10 0 0 0 9 9.93V24h2v-2.07A10 10 0 0 0 22 12h-2.07a8.001 8.001 0 0 1-6.93 6.93V19h-2v-.07z"/>
+          </svg>
+        </motion.div>
+      </div>
+
+      {/* Equalizer bars */}
+      <div className="flex items-end gap-[3px] h-10">
+        {EQ_BARS.map((h, i) => (
+          <motion.div
+            key={i}
+            className="w-1.5 rounded-full bg-gradient-to-t from-sky-600 to-sky-400"
+            animate={speaking
+              ? { height: [`${h * 3}px`, `${(h * 1.8 + Math.random() * 8) | 0}px`, `${h * 3}px`] }
+              : { height: '4px' }
+            }
+            transition={{ duration: 0.35 + i * 0.02, repeat: Infinity, ease: 'easeInOut', delay: i * 0.04 }}
+          />
+        ))}
+      </div>
+
+      {/* Live translation card */}
+      <div className="w-full max-w-md bg-slate-900/80 backdrop-blur-xl border border-slate-700/60 rounded-2xl p-5 shadow-2xl">
+        {/* From */}
+        <div className="mb-3">
+          <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">Speaking</span>
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={pair.from}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.35 }}
+              className="text-slate-200 font-medium mt-0.5"
+            >
+              {pair.from}
+            </motion.p>
+          </AnimatePresence>
+        </div>
+
+        {/* Divider with arrow */}
+        <div className="flex items-center gap-3 my-3">
+          <div className="flex-1 h-px bg-slate-800" />
+          <motion.div
+            animate={{ x: [0, 4, 0] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
+            className="w-7 h-7 rounded-full bg-sky-500/10 border border-sky-500/30 flex items-center justify-center flex-shrink-0"
+          >
+            <svg className="w-3.5 h-3.5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </motion.div>
+          <div className="flex-1 h-px bg-slate-800" />
+        </div>
+
+        {/* To */}
+        <div className="mb-4">
+          <span className="text-xs text-slate-500 font-medium uppercase tracking-wider">They hear</span>
+          <AnimatePresence mode="wait">
+            <motion.p
+              key={pair.to}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.35, delay: 0.15 }}
+              className="text-white font-semibold mt-0.5"
+            >
+              {pair.to}
+            </motion.p>
+          </AnimatePresence>
+        </div>
+
+        {/* Status bar */}
+        <div className="flex items-center gap-2.5 bg-sky-500/8 border border-sky-500/20 rounded-xl px-3 py-2">
+          <motion.div
+            animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
+            transition={{ duration: 1, repeat: Infinity }}
+            className="w-2 h-2 rounded-full bg-sky-400 flex-shrink-0"
+          />
+          <span className="text-xs text-sky-300 font-semibold">Translating live</span>
+          <div className="ml-auto flex items-center gap-1">
+            <span className="text-xs text-emerald-400 font-mono font-bold">0.9s</span>
+            <span className="text-xs text-slate-600">latency</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Floating badges */}
+      <motion.div
+        animate={{ y: [0, -7, 0] }}
+        transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute -right-4 top-8 bg-emerald-500/10 border border-emerald-500/25 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs font-semibold text-emerald-300 hidden lg:block"
+      >
+        ✓ 50 languages
+      </motion.div>
+      <motion.div
+        animate={{ y: [0, 7, 0] }}
+        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+        className="absolute -left-4 top-16 bg-violet-500/10 border border-violet-500/25 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs font-semibold text-violet-300 hidden lg:block"
+      >
+        ⚡ &lt;1.2s latency
+      </motion.div>
+    </motion.div>
   );
 }
 
