@@ -476,7 +476,7 @@ function Languages({ t }: { t: ReturnType<typeof useTranslations> }) {
   );
 }
 
-/* ── Pricing — 3D flip cards ──────────────────────────────────────────────── */
+/* ── Pricing teaser cards ─────────────────────────────────────────────────── */
 const PLAN_FEATURES: Record<string, string[]> = {
   Free:         ['5 minutes trial', 'All languages', 'macOS + Windows', 'Basic support'],
   Starter:      ['60 minutes', 'All languages', 'macOS + Windows', 'Email support', 'HD voice'],
@@ -484,81 +484,54 @@ const PLAN_FEATURES: Record<string, string[]> = {
   Professional: ['360 minutes', 'All languages', 'macOS + Windows', '24/7 support', 'HD voice', 'API access', 'Custom voice'],
 };
 
-function FlipCard({ name, price, minutes, highlight, badge }:
+function PricingTeaserCard({ name, price, minutes, highlight, badge }:
   { name: string; price: string; minutes: number; highlight: boolean; badge: string | null }) {
   const feats = PLAN_FEATURES[name] ?? [];
-  const perMin = name === 'Free' ? '0' : (parseInt(price.replace('$','')) / minutes).toFixed(2);
-  const tilt = useTilt(10);
+  const perMin = name === 'Free' ? '0' : (parseInt(price.replace('$', '')) / minutes).toFixed(2);
 
-  const inner = (
-    <div className="relative w-full h-full"
-      style={{ transformStyle: 'preserve-3d', transition: 'transform 0.65s cubic-bezier(0.22,1,0.36,1)' }}
-      onMouseEnter={e => (e.currentTarget.style.transform = 'rotateY(180deg)')}
-      onMouseLeave={e => (e.currentTarget.style.transform = 'rotateY(0deg)')}>
-      {/* Front */}
-      <div className="absolute inset-0 rounded-2xl p-6 flex flex-col"
-        style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
-          background: highlight ? 'rgba(0,200,255,0.06)' : 'rgba(255,255,255,0.03)',
-          border: highlight ? '1px solid rgba(0,200,255,0.3)' : '1px solid rgba(255,255,255,0.07)' }}>
-        <div className="font-bold text-lg mb-1 text-white">{name}</div>
-        <div className="text-4xl font-extrabold text-white my-3">{price}</div>
-        <div className="text-xs text-slate-500 mb-6">{minutes} min · ${perMin}/min</div>
-        <Link href={name === 'Free' ? '/dashboard' : '/pricing'}
-          className="mt-auto block w-full py-3 rounded-xl text-center text-sm font-bold transition-all active:scale-95"
-          style={highlight
-            ? { background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', color: '#000' }
-            : { background: 'rgba(255,255,255,0.08)', color: '#e2e8f0' }}>
-          {name === 'Free' ? 'Start Free' : 'Buy Now'}
-        </Link>
-      </div>
-      {/* Back */}
-      <div className="absolute inset-0 rounded-2xl p-6 flex flex-col justify-center"
-        style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
-          transform: 'rotateY(180deg)',
-          background: 'rgba(0,200,255,0.05)',
-          border: '1px solid rgba(0,200,255,0.2)' }}>
-        <div className="font-bold text-white mb-4">{name} &mdash; What&apos;s included</div>
-        <ul className="space-y-2">
-          {feats.map(f => (
-            <li key={f} className="flex items-center gap-2 text-sm text-slate-300">
-              <span style={{ color: '#00c8ff' }}>✓</span> {f}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-
-  if (highlight) {
-    return (
-      <div className="group relative" style={{ perspective: '1000px', height: '260px' }}>
-        {badge && (
-          <span className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 text-xs font-bold px-3 py-0.5 rounded-full whitespace-nowrap"
-            style={{ background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', color: '#fff' }}>
-            {badge}
-          </span>
-        )}
-        {/* Float + pulse glow for Most Popular */}
-        <motion.div className="w-full h-full popular-glow rounded-2xl"
-          animate={{ y: [0, -8, 0] }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}>
-          {inner}
-        </motion.div>
-      </div>
-    );
-  }
-
-  return (
-    <div ref={tilt.ref} onMouseMove={tilt.onMouseMove} onMouseLeave={tilt.onMouseLeave}
-      className="group relative" style={{ perspective: '1000px', height: '260px', transition: 'transform 0.15s ease', willChange: 'transform' }}>
+  const card = (
+    <TiltCard glowColor="rgba(0,200,255,0.12)" lift={!highlight}
+      className="group relative rounded-2xl p-6 flex flex-col h-[260px]"
+      style={{
+        background: highlight ? 'rgba(0,200,255,0.06)' : 'rgba(255,255,255,0.03)',
+        border: highlight ? '1px solid rgba(0,200,255,0.3)' : '1px solid rgba(255,255,255,0.07)',
+        backdropFilter: 'blur(8px)',
+      }}>
       {badge && (
         <span className="absolute -top-3 left-1/2 -translate-x-1/2 z-20 text-xs font-bold px-3 py-0.5 rounded-full whitespace-nowrap"
           style={{ background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', color: '#fff' }}>
           {badge}
         </span>
       )}
-      {inner}
-    </div>
+      <div className="font-bold text-lg mb-1 text-white">{name}</div>
+      <div className="text-4xl font-extrabold text-white my-3">{price}</div>
+      <div className="text-xs text-slate-500 mb-4">{minutes} min · ${perMin}/min</div>
+      <ul className="space-y-1.5 mb-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+        {feats.slice(0, 3).map(f => (
+          <li key={f} className="flex items-center gap-2 text-xs text-slate-400">
+            <span style={{ color: '#00c8ff' }}>✓</span> {f}
+          </li>
+        ))}
+      </ul>
+      <Link href={name === 'Free' ? '/dashboard' : '/pricing'}
+        className="mt-auto block w-full py-3 rounded-xl text-center text-sm font-bold transition-all active:scale-95"
+        style={highlight
+          ? { background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', color: '#000' }
+          : { background: 'rgba(255,255,255,0.08)', color: '#e2e8f0' }}>
+        {name === 'Free' ? 'Start Free' : 'Buy Now'}
+      </Link>
+    </TiltCard>
+  );
+
+  if (!highlight) return card;
+
+  return (
+    <motion.div
+      animate={{ y: [0, -8, 0] }}
+      transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+      className="popular-glow rounded-2xl">
+      {card}
+    </motion.div>
   );
 }
 
@@ -579,7 +552,7 @@ function PricingTeaser({ t }: { t: ReturnType<typeof useTranslations> }) {
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
           {plans.map((p, i) => (
             <FadeUp key={p.name} delay={i * 0.1}>
-              <FlipCard {...p} />
+              <PricingTeaserCard {...p} />
             </FadeUp>
           ))}
         </div>
