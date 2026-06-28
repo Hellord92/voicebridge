@@ -7,6 +7,7 @@ import { motion, useInView, useScroll, useTransform, AnimatePresence } from 'fra
 import { useAuth } from '../../lib/auth';
 
 const GlobeHero = dynamic(() => import('../../components/GlobeHero'), { ssr: false });
+const MicScene  = dynamic(() => import('../../components/MicScene'),  { ssr: false });
 
 /* ── Scroll-triggered reveal helpers ─────────────────────────────────────── */
 function FadeUp({ children, delay = 0, className = '' }: { children: React.ReactNode; delay?: number; className?: string }) {
@@ -87,106 +88,103 @@ export default function HomePage() {
 function Hero({ t }: { t: ReturnType<typeof useTranslations> }) {
   const ref = useRef(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end start'] });
-  const y       = useTransform(scrollYProgress, [0, 1], [0, 130]);
-  const opacity = useTransform(scrollYProgress, [0, 0.6], [1, 0]);
+  const textY   = useTransform(scrollYProgress, [0, 1], [0, 110]);
+  const textOp  = useTransform(scrollYProgress, [0, 0.55], [1, 0]);
 
   return (
-    <section ref={ref} className="relative min-h-screen flex flex-col overflow-hidden bg-[#0a0a0f]">
+    <section ref={ref} className="relative min-h-screen flex flex-col overflow-hidden bg-[#0a0a12]">
 
-      {/* Radial cyan glow behind globe */}
+      {/* Ambient glows */}
       <div className="pointer-events-none absolute inset-0 z-0"
-        style={{ background: 'radial-gradient(ellipse 60% 60% at 65% 50%, rgba(0,200,255,0.08) 0%, transparent 70%)' }} />
+        style={{ background: 'radial-gradient(ellipse 55% 55% at 68% 45%, rgba(0,200,255,0.07) 0%, transparent 70%)' }} />
       <div className="pointer-events-none absolute inset-0 z-0"
-        style={{ background: 'radial-gradient(ellipse 40% 40% at 65% 50%, rgba(124,58,237,0.06) 0%, transparent 70%)' }} />
+        style={{ background: 'radial-gradient(ellipse 35% 35% at 68% 45%, rgba(124,58,237,0.05) 0%, transparent 70%)' }} />
 
-      {/* Two-column layout */}
-      <motion.div style={{ y, opacity }}
-        className="relative z-10 flex-1 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-8 items-center px-6 pt-24 pb-16">
+      {/* 40/60 split — text left, mic right */}
+      <div className="relative z-10 flex-1 max-w-[1400px] mx-auto w-full grid grid-cols-1 lg:grid-cols-[5fr_7fr] gap-0 items-center px-6 pt-24 pb-0 min-h-screen">
 
-        {/* Left: copy */}
-        <div className="text-center lg:text-left order-2 lg:order-1">
+        {/* Left: copy (40%) */}
+        <motion.div style={{ y: textY, opacity: textOp }}
+          className="text-center lg:text-left order-2 lg:order-1 flex flex-col justify-center py-16 lg:py-0 lg:pr-8">
+
           <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, ease: 'backOut' }}
-            className="inline-flex items-center gap-2 text-xs font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 px-4 py-1.5 rounded-full mb-8 backdrop-blur-sm">
+            className="inline-flex items-center gap-2 text-xs font-semibold px-4 py-1.5 rounded-full mb-8 backdrop-blur-sm self-center lg:self-start"
+            style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', color: '#67e8f9' }}>
             <motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ duration: 1.5, repeat: Infinity }}
               className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
             {t('hero_badge')}
           </motion.div>
 
-          <motion.h1 initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.9, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
-            className="text-5xl sm:text-6xl lg:text-[72px] font-extrabold tracking-tight leading-[1.04] mb-6 whitespace-pre-line">
-            <span className="bg-gradient-to-br from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
-              {t('hero_headline')}
-            </span>
-          </motion.h1>
+          {/* Split headline — Apple style */}
+          <div className="mb-6">
+            <motion.h1 initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.9, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+              className="text-5xl sm:text-6xl lg:text-[68px] xl:text-[76px] font-extrabold tracking-tight leading-[1.04]">
+              <span className="text-white block">Speak any</span>
+              <span className="text-white block">language.</span>
+              <span className="block mt-1" style={{ color: 'rgba(255,255,255,0.28)' }}>Your audience</span>
+              <span className="block" style={{ color: 'rgba(255,255,255,0.28)' }}>hears theirs.</span>
+            </motion.h1>
+          </div>
 
           <motion.p initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.3 }}
-            className="text-lg text-slate-400 max-w-xl mb-10 leading-relaxed mx-auto lg:mx-0">
+            className="text-base text-slate-400 max-w-sm mb-8 leading-relaxed mx-auto lg:mx-0">
             {t('hero_sub')}
           </motion.p>
 
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.45 }}
-            className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-14">
+            className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start mb-10">
             <Link href="/dashboard"
-              className="group relative overflow-hidden px-9 py-4 rounded-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-base transition-all shadow-xl shadow-cyan-500/30 hover:shadow-cyan-500/50 hover:-translate-y-0.5 active:translate-y-0.5">
+              className="px-8 py-3.5 rounded-full font-bold text-sm text-black transition-all active:scale-95"
+              style={{ background: '#00c8ff', boxShadow: '0 0 28px rgba(0,200,255,0.35)' }}
+              onMouseEnter={e => ((e.target as HTMLElement).style.background = '#22d3ee')}
+              onMouseLeave={e => ((e.target as HTMLElement).style.background = '#00c8ff')}>
               {t('hero_cta_primary')}
             </Link>
             <Link href="#how"
-              className="px-9 py-4 rounded-full border border-white/10 hover:border-cyan-500/40 bg-white/[0.04] hover:bg-white/[0.07] text-slate-300 hover:text-white font-medium text-base transition-all hover:-translate-y-0.5">
+              className="px-8 py-3.5 rounded-full font-medium text-sm text-slate-300 hover:text-white transition-all"
+              style={{ border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}>
               {t('hero_cta_secondary')} →
             </Link>
           </motion.div>
 
-          {/* Mini stats */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }}
-            className="flex gap-8 justify-center lg:justify-start">
-            {[['50+','Languages'],['<1.2s','Latency'],['99.9%','Uptime']].map(([v, l]) => (
-              <div key={l} className="text-center">
-                <div className="text-xl font-bold text-white">{v}</div>
-                <div className="text-xs text-slate-500 uppercase tracking-wider mt-0.5">{l}</div>
-              </div>
-            ))}
-          </motion.div>
-        </div>
+          {/* Badge row */}
+          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9 }}
+            className="text-xs text-slate-600 font-medium">
+            &lt;1.2s latency · 50 languages · 99.9% uptime
+          </motion.p>
+        </motion.div>
 
-        {/* Right: 3D Globe */}
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 1.2, delay: 0.25, ease: [0.22, 1, 0.36, 1] }}
-          className="order-1 lg:order-2 h-[360px] sm:h-[480px] lg:h-[600px] w-full relative">
-          {/* Glow disc */}
-          <div className="absolute inset-0 rounded-full"
-            style={{ background: 'radial-gradient(ellipse 70% 50% at 50% 50%, rgba(0,200,255,0.12) 0%, transparent 70%)' }} />
-          <GlobeHero />
-          {/* Floating badges */}
-          <motion.div animate={{ y: [0,-7,0] }} transition={{ duration: 3.5, repeat: Infinity }}
-            className="absolute top-8 right-4 hidden sm:flex items-center gap-2 bg-black/60 backdrop-blur border border-cyan-500/20 rounded-xl px-3 py-1.5 text-xs font-semibold text-cyan-300 pointer-events-none">
-            ✓ 50 languages
-          </motion.div>
-          <motion.div animate={{ y: [0,7,0] }} transition={{ duration: 4, repeat: Infinity, delay: 1 }}
-            className="absolute bottom-16 left-4 hidden sm:flex items-center gap-2 bg-black/60 backdrop-blur border border-violet-500/20 rounded-xl px-3 py-1.5 text-xs font-semibold text-violet-300 pointer-events-none">
-            ⚡ Live translation
+        {/* Right: 3D Mic (60%) */}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          transition={{ duration: 1.4, delay: 0.2 }}
+          className="order-1 lg:order-2 h-[480px] sm:h-[580px] lg:h-screen w-full relative">
+          {/* Glow behind mic */}
+          <div className="absolute inset-0 pointer-events-none"
+            style={{ background: 'radial-gradient(ellipse 50% 50% at 50% 55%, rgba(0,200,255,0.06) 0%, transparent 70%)' }} />
+          <MicScene />
+
+          {/* Live translation glass card — bottom left */}
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 1.3, duration: 0.6 }}
+            className="absolute bottom-20 left-4 w-64 pointer-events-none"
+            style={{ background: 'rgba(10,10,20,0.72)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '14px 16px' }}>
+            <LiveDemo compact />
           </motion.div>
         </motion.div>
-      </motion.div>
-
-      {/* Live demo card at bottom */}
-      <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1.1, duration: 0.8 }}
-        className="relative z-10 flex justify-center px-4 pb-14">
-        <LiveDemo />
-      </motion.div>
+      </div>
 
       {/* Bottom fade */}
-      <div className="absolute bottom-0 left-0 right-0 h-40 pointer-events-none z-10 bg-gradient-to-t from-[#0a0a0f] to-transparent" />
+      <div className="absolute bottom-0 left-0 right-0 h-32 pointer-events-none z-10 bg-gradient-to-t from-[#0a0a12] to-transparent" />
     </section>
   );
 }
 
 /* ── Live translation demo card ───────────────────────────────────────────── */
-function LiveDemo() {
+function LiveDemo({ compact = false }: { compact?: boolean }) {
   const [idx, setIdx] = useState(0);
   const [speaking, setSpeaking] = useState(true);
   useEffect(() => {
@@ -199,7 +197,7 @@ function LiveDemo() {
   const p = PAIRS[idx];
 
   return (
-    <div className="w-full max-w-sm bg-white/[0.04] backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl">
+    <div className={`w-full ${compact ? '' : 'max-w-sm bg-white/[0.04] backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl'}`}>
       {/* Mic + EQ row */}
       <div className="flex items-center gap-4 mb-4">
         <div className="relative">
