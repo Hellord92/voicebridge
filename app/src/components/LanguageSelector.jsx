@@ -3,17 +3,16 @@ import { LANGUAGES } from '../languages.js';
 
 export default function LanguageSelector({ sourceLang, targetLang, onChange }) {
   return (
-    <div className="bg-slate-800/60 rounded-xl p-4 space-y-3">
+    <div className="glass-card p-4 space-y-3">
       <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Language</p>
 
-      <div className="grid grid-cols-[1fr_28px_1fr] gap-2 items-center">
-        {/* Source */}
+      <div className="grid grid-cols-[1fr_24px_1fr] gap-2 items-end">
         <div>
           <p className="text-xs text-slate-500 mb-1">I speak</p>
           <select
             value={sourceLang}
             onChange={e => onChange(e.target.value, targetLang)}
-            className="w-full bg-slate-700 text-sm text-white rounded-lg px-2 py-1.5 border border-slate-600 focus:border-sky-400 outline-none"
+            className="w-full bg-white/5 text-sm text-white rounded-lg px-2 py-2 border border-white/10 focus:border-cyan-400/50 outline-none"
           >
             <option value="auto">Auto detect</option>
             {LANGUAGES.map(l => (
@@ -22,16 +21,14 @@ export default function LanguageSelector({ sourceLang, targetLang, onChange }) {
           </select>
         </div>
 
-        {/* Arrow */}
-        <div className="text-center text-slate-400 text-lg mt-4">→</div>
+        <div className="text-center text-cyan-500/60 text-lg pb-2">→</div>
 
-        {/* Target */}
         <div>
           <p className="text-xs text-slate-500 mb-1">They hear</p>
           <select
             value={targetLang}
             onChange={e => onChange(sourceLang, e.target.value)}
-            className="w-full bg-slate-700 text-sm text-white rounded-lg px-2 py-1.5 border border-slate-600 focus:border-sky-400 outline-none"
+            className="w-full bg-white/5 text-sm text-white rounded-lg px-2 py-2 border border-white/10 focus:border-cyan-400/50 outline-none"
           >
             {LANGUAGES.map(l => (
               <option key={l.code} value={l.code}>{l.flag} {l.name}</option>

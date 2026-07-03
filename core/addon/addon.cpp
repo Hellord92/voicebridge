@@ -18,6 +18,7 @@ Napi::Value StartPipeline(const Napi::CallbackInfo &info)
     if (opts.Has("licenseKey"))  cfg.licenseKey  = opts.Get("licenseKey").As<Napi::String>().Utf8Value();
     if (opts.Has("sourceLang"))  cfg.sourceLang  = opts.Get("sourceLang").As<Napi::String>().Utf8Value();
     if (opts.Has("targetLang"))  cfg.targetLang  = opts.Get("targetLang").As<Napi::String>().Utf8Value();
+    if (opts.Has("voiceGender")) cfg.voiceGender = opts.Get("voiceGender").As<Napi::String>().Utf8Value();
 
     /* JS callbacks */
     if (opts.Has("onTranscript")) {
@@ -64,6 +65,15 @@ Napi::Value SetLanguages(const Napi::CallbackInfo &info)
     return env.Undefined();
 }
 
+Napi::Value SetVoiceGender(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    if (info.Length() < 1) return env.Undefined();
+    std::string gender = info[0].As<Napi::String>().Utf8Value();
+    if (gPipeline) gPipeline->setVoiceGender(gender);
+    return env.Undefined();
+}
+
 Napi::Value ListInputDevices(const Napi::CallbackInfo &info)
 {
     Napi::Env env = info.Env();
@@ -80,6 +90,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     exports.Set("startPipeline",   Napi::Function::New(env, StartPipeline));
     exports.Set("stopPipeline",    Napi::Function::New(env, StopPipeline));
     exports.Set("setLanguages",    Napi::Function::New(env, SetLanguages));
+    exports.Set("setVoiceGender",  Napi::Function::New(env, SetVoiceGender));
     exports.Set("listInputDevices",Napi::Function::New(env, ListInputDevices));
     return exports;
 }

@@ -52,12 +52,14 @@ function useTilt(max = 14) {
 const LANGS_ROW1 = [
   '🇬🇧 English','🇹🇷 Turkish','🇪🇸 Spanish','🇫🇷 French','🇩🇪 German',
   '🇵🇹 Portuguese','🇮🇳 Hindi','🇨🇳 Chinese','🇯🇵 Japanese','🇸🇦 Arabic',
-  '🇰🇷 Korean','🇮🇹 Italian',
+  '🇰🇷 Korean','🇮🇹 Italian','🇺🇦 Ukrainian','🇧🇩 Bengali','🇵🇰 Urdu',
+  '🇻🇳 Vietnamese','🇹🇭 Thai','🇮🇩 Indonesian',
 ];
 const LANGS_ROW2 = [
   '🇷🇺 Russian','🇳🇱 Dutch','🇵🇱 Polish','🇸🇪 Swedish','🇳🇴 Norwegian',
-  '🇩🇰 Danish','🇫🇮 Finnish','🇺🇦 Ukrainian','🇻🇳 Vietnamese','🇹🇭 Thai',
-  '🇮🇩 Indonesian','🇲🇾 Malay',
+  '🇩🇰 Danish','🇫🇮 Finnish','🇲🇾 Malay','🇵🇭 Filipino','🇰🇪 Swahili',
+  '🇬🇪 Georgian','🇦🇲 Armenian','🇦🇿 Azerbaijani','🇳🇬 Hausa','🇪🇹 Amharic',
+  '🇲🇲 Burmese','🇰🇭 Khmer','🇱🇰 Sinhala',
 ];
 
 /* ── Animated stat counter ───────────────────────────────────────────────── */
@@ -192,7 +194,7 @@ function Hero({ t }: { t: ReturnType<typeof useTranslations> }) {
             className="flex flex-wrap gap-6 justify-center lg:justify-start">
             {[
               { value: 50,   suffix: '+', label: 'Languages' },
-              { value: 1.2,  prefix: '<', suffix: 's', label: 'Latency' },
+              { value: 2,    prefix: '<', suffix: 's', label: 'Latency' },
               { value: 99.9, suffix: '%', label: 'Uptime' },
             ].map((s) => (
               <StatCounter key={s.label} {...s} />
@@ -304,8 +306,8 @@ function LiveDemo({ compact = false }: { compact?: boolean }) {
 /* ── Stats bar ────────────────────────────────────────────────────────────── */
 function Stats({ t }: { t: ReturnType<typeof useTranslations> }) {
   const items = [
-    { value: '50',    label: t('stats_langs') },
-    { value: '<1.2s', label: t('stats_latency') },
+    { value: '100',   label: t('stats_langs') },
+    { value: '<1s', label: t('stats_latency') },
     { value: '2',     label: t('stats_platforms') },
     { value: '5 min', label: t('stats_trial') },
     { value: '100%',  label: t('stats_secure') },
@@ -345,8 +347,8 @@ function HowItWorks({ t }: { t: ReturnType<typeof useTranslations> }) {
           <p className="text-slate-400 text-xl">{t('how_sub')}</p>
         </FadeUp>
         <div className="grid md:grid-cols-3 gap-6 relative">
-          {/* Dotted connecting line between cards */}
-          <div className="hidden md:block absolute top-10 left-[calc(16.67%+1.5rem)] right-[calc(16.67%+1.5rem)]"
+          {/* Dotted connecting line — vertically centered on the step icon badges (28px padding + 28px half-icon = 56px) */}
+          <div className="hidden md:block absolute top-[3.5rem] left-[calc(16.67%+2rem)] right-[calc(16.67%+2rem)]"
             style={{ height: '2px', backgroundImage: 'linear-gradient(90deg, rgba(0,200,255,0.4) 0%, rgba(124,58,237,0.4) 50%, rgba(16,185,129,0.4) 100%)',
               maskImage: 'repeating-linear-gradient(90deg, black 0px, black 6px, transparent 6px, transparent 14px)' }} />
           {steps.map((s, i) => (
@@ -469,7 +471,7 @@ function Languages({ t }: { t: ReturnType<typeof useTranslations> }) {
       <FadeIn className="text-center mt-10">
         <span className="px-4 py-2 rounded-full text-sm font-semibold"
           style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: '#67e8f9' }}>
-          +30 more languages
+          +76 more languages
         </span>
       </FadeIn>
     </section>
@@ -478,10 +480,10 @@ function Languages({ t }: { t: ReturnType<typeof useTranslations> }) {
 
 /* ── Pricing teaser cards ─────────────────────────────────────────────────── */
 const PLAN_FEATURES: Record<string, string[]> = {
-  Free:         ['5 minutes trial', 'All languages', 'macOS + Windows', 'Basic support'],
-  Starter:      ['60 minutes', 'All languages', 'macOS + Windows', 'Email support', 'HD voice'],
-  Standard:     ['240 minutes', 'All languages', 'macOS + Windows', 'Priority support', 'HD voice', 'API access'],
-  Professional: ['360 minutes', 'All languages', 'macOS + Windows', '24/7 support', 'HD voice', 'API access', 'Custom voice'],
+  Free:         ['5 minutes trial', '100 languages', 'macOS + Windows', 'Basic support'],
+  Starter:      ['60 minutes', '100 languages', 'macOS + Windows', 'Email support', 'HD voice'],
+  Standard:     ['240 minutes', '100 languages', 'macOS + Windows', 'Priority support', 'HD voice', 'API access'],
+  Professional: ['360 minutes', '100 languages', 'macOS + Windows', '24/7 support', 'HD voice', 'API access', 'Custom voice'],
 };
 
 function PricingTeaserCard({ name, price, minutes, highlight, badge }:
@@ -491,7 +493,7 @@ function PricingTeaserCard({ name, price, minutes, highlight, badge }:
 
   const card = (
     <TiltCard glowColor="rgba(0,200,255,0.12)" lift={!highlight}
-      className="group relative rounded-2xl p-6 flex flex-col h-[260px]"
+      className="group relative rounded-2xl p-6 flex flex-col h-full min-h-[260px]"
       style={{
         background: highlight ? 'rgba(0,200,255,0.06)' : 'rgba(255,255,255,0.03)',
         border: highlight ? '1px solid rgba(0,200,255,0.3)' : '1px solid rgba(255,255,255,0.07)',
@@ -529,7 +531,7 @@ function PricingTeaserCard({ name, price, minutes, highlight, badge }:
     <motion.div
       animate={{ y: [0, -8, 0] }}
       transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-      className="popular-glow rounded-2xl">
+      className="popular-glow rounded-2xl h-full flex flex-col">
       {card}
     </motion.div>
   );
@@ -549,9 +551,9 @@ function PricingTeaser({ t }: { t: ReturnType<typeof useTranslations> }) {
           <h2 className="text-4xl md:text-6xl font-extrabold mb-4">{t('pricing_teaser_title')}</h2>
           <p className="text-slate-400 text-xl">{t('pricing_teaser_sub')}</p>
         </FadeUp>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-10 items-stretch">
           {plans.map((p, i) => (
-            <FadeUp key={p.name} delay={i * 0.1}>
+            <FadeUp key={p.name} delay={i * 0.1} className="h-full">
               <PricingTeaserCard {...p} />
             </FadeUp>
           ))}

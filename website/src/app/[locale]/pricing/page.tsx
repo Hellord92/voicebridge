@@ -1,12 +1,12 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import clsx from 'clsx';
 import { useAuth } from '../../../lib/auth';
 
 const PLANS = [
-  { id: 'free',    minutes: 5,   price: '$0',    name: 'Free',         desc: 'Try all 50 languages.',                 highlight: false, savings: null },
+  { id: 'free',    minutes: 5,   price: '$0',    name: 'Free',         desc: 'Try all 100 languages.',                highlight: false, savings: null },
   { id: 'min_60',  minutes: 60,  price: '$99',   name: 'Starter',      desc: 'Perfect for occasional meetings.',      highlight: false, savings: null },
   { id: 'min_120', minutes: 120, price: '$179',  name: 'Basic',        desc: 'Save $19 vs two Starter packs.',        highlight: false, savings: 9   },
   { id: 'min_240', minutes: 240, price: '$329',  name: 'Standard',     desc: 'Most popular — daily meetings.',        highlight: true,  savings: 17  },
@@ -242,6 +242,24 @@ export default function PricingPage() {
 
 function PaymentResult({ result }: { result: any }) {
   const p = result.payment;
+  const [orderStatus, setOrderStatus] = useState<any>(null);
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://api.voicebridgeapps.com';
+
+  useEffect(() => {
+    if (!result.order_id) return;
+    let active = true;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/orders/${result.order_id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (active) setOrderStatus(data);
+      } catch { /* ignore */ }
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { active = false; clearInterval(id); };
+  }, [result.order_id, apiBase]);
 
   if (p.method === 'crypto') {
     return (
@@ -253,6 +271,15 @@ function PaymentResult({ result }: { result: any }) {
             <p className="text-xs text-slate-400">to the address below</p>
           </div>
         </div>
+        {orderStatus?.status === 'confirmed' && orderStatus.license_key && (
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 text-sm">
+            <p className="font-semibold text-emerald-300 mb-1">Payment confirmed!</p>
+            <p className="font-mono text-xs break-all select-all">{orderStatus.license_key}</p>
+          </div>
+        )}
+        {orderStatus?.status === 'pending' && (
+          <p className="text-xs text-amber-400 animate-pulse">Waiting for on-chain confirmation…</p>
+        )}
         <div className="bg-slate-800 rounded-lg p-3">
           <p className="text-xs text-slate-400 mb-1">Payment address</p>
           <p className="font-mono text-xs text-white break-all">{p.pay_address}</p>

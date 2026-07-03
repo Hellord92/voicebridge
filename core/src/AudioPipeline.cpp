@@ -57,6 +57,7 @@ struct AudioPipeline::Impl {
     std::mutex        langMutex;
     std::string       sourceLang;
     std::string       targetLang;
+    std::string       voiceGender;
 
     /* Work queue for async HTTP requests */
     struct WorkItem { std::vector<float> pcm; };
@@ -66,7 +67,7 @@ struct AudioPipeline::Impl {
     std::thread               workerThread;
 
     explicit Impl(const PipelineConfig &c)
-        : cfg(c), sourceLang(c.sourceLang), targetLang(c.targetLang) {}
+        : cfg(c), sourceLang(c.sourceLang), targetLang(c.targetLang), voiceGender(c.voiceGender) {}
 
     void log(const std::string &lvl, const std::string &msg) {
         if (cfg.logCallback) cfg.logCallback(lvl, msg);
@@ -128,17 +129,18 @@ struct AudioPipeline::Impl {
         memcpy(h+44, pcm16.data(), dataBytes);
 
         /* POST to server */
-        std::string srcLang, tgtLang;
-        { std::lock_guard<std::mutex> lk(langMutex); srcLang = sourceLang; tgtLang = targetLang; }
+        std::string srcLang, tgtLang, gender;
+        { std::lock_guard<std::mutex> lk(langMutex); srcLang = sourceLang; tgtLang = targetLang; gender = voiceGender; }
 
         httplib::SSLClient cli(cfg.serverUrl.c_str(), 443);
         cli.set_connection_timeout(10);
         cli.set_read_timeout(30);
 
         httplib::MultipartFormDataItems form = {
-            {"audio",       wav, "audio.wav", "audio/wav"},
-            {"source_lang", srcLang, "", ""},
-            {"target_lang", tgtLang, "", ""},
+            {"audio",         wav, "audio.wav", "audio/wav"},
+            {"source_lang",   srcLang, "", ""},
+            {"target_lang",   tgtLang, "", ""},
+            {"voice_gender",  gender, "", ""},
         };
 
         httplib::Headers headers = {
@@ -251,4 +253,10 @@ void AudioPipeline::setLanguages(const std::string &src, const std::string &tgt)
     std::lock_guard<std::mutex> lk(mImpl->langMutex);
     mImpl->sourceLang = src;
     mImpl->targetLang = tgt;
+}
+
+void AudioPipeline::setVoiceGender(const std::string &gender)
+{
+    std::lock_guard<std::mutex> lk(mImpl->langMutex);
+    mImpl->voiceGender = gender;
 }

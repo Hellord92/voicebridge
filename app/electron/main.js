@@ -24,13 +24,13 @@ let win;
 
 function createWindow() {
   win = new BrowserWindow({
-    width:          420,
-    height:         680,
+    width:          480,
+    height:         760,
     resizable:      false,
     titleBarStyle:  'hiddenInset',
     vibrancy:       'under-window',   /* macOS frosted glass */
     transparent:    false,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0a0a12',
     webPreferences: {
       preload:          path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -106,9 +106,11 @@ ipcMain.handle('get-settings', async () => {
     serverUrl:         store.get('serverUrl', 'https://api.voicebridgeapps.com'),
     sourceLang:        store.get('sourceLang', 'auto'),
     targetLang:        store.get('targetLang', 'en'),
+    voiceGender:       store.get('voiceGender', 'female'),
     inputDeviceIndex:  store.get('inputDeviceIndex', -1),
     outputDeviceIndex: store.get('outputDeviceIndex', -1),
     monitorEnabled:    store.get('monitorEnabled', false),
+    onboardingDone:    store.get('onboardingDone', false),
   };
 });
 
@@ -142,8 +144,10 @@ ipcMain.handle('firebase-post-login', async (_e, idToken) => {
 
 ipcMain.handle('save-settings', async (_e, settings) => {
   for (const [k, v] of Object.entries(settings)) store.set(k, v);
-  /* hot-swap language pair */
-  if (core) core.setLanguages(settings.sourceLang, settings.targetLang);
+  if (core) {
+    core.setLanguages(settings.sourceLang, settings.targetLang);
+    if (settings.voiceGender) core.setVoiceGender(settings.voiceGender);
+  }
   return { ok: true };
 });
 

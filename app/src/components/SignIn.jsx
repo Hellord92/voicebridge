@@ -23,54 +23,52 @@ export default function SignIn({ onSignIn }) {
   };
 
   return (
-    <div className="flex flex-col h-full items-center justify-center px-6">
-      {/* Logo */}
-      <div className="mb-8 text-center">
-        <div className="text-sky-400 font-extrabold text-2xl tracking-tight mb-1">VoiceBridge</div>
-        <p className="text-slate-400 text-xs">Real-time voice translation</p>
-      </div>
+    <div className="flex flex-col h-full relative overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none"
+        style={{ background: 'radial-gradient(ellipse 80% 60% at 50% 0%, rgba(0,200,255,0.12) 0%, transparent 70%)' }} />
 
-      {/* Card */}
-      <div className="w-full bg-slate-800/60 border border-slate-700 rounded-2xl p-6 space-y-4">
-        <h2 className="font-semibold text-center">Sign in to continue</h2>
-        <p className="text-xs text-slate-400 text-center">
-          Your account syncs your license across devices.
-        </p>
+      <div className="titlebar-drag h-8" />
 
-        <button
-          onClick={handleGoogle}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-semibold py-3 rounded-xl hover:bg-slate-100 active:scale-95 transition-all disabled:opacity-50"
-        >
-          <GoogleIcon />
-          {loading ? 'Opening browser…' : 'Continue with Google'}
-        </button>
-
-        {error && (
-          <p className="text-xs text-rose-400 text-center">{error}</p>
-        )}
-
-        <div className="border-t border-slate-700 pt-3">
-          <p className="text-xs text-slate-500 text-center mb-2">Have a license key instead?</p>
-          <button
-            onClick={() => onSignIn(null, null)}
-            className="w-full text-xs text-slate-400 hover:text-white py-1.5 transition"
-          >
-            Enter license key manually →
-          </button>
+      <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10">
+        <img src="./assets/logo.svg" alt="VoiceBridge" className="h-8 mb-2" onError={e => { e.target.style.display = 'none'; }} />
+        <div className="text-2xl font-extrabold tracking-tight mb-1">
+          <span className="text-white">Voice</span><span className="text-cyan-400">Bridge</span>
         </div>
-      </div>
+        <p className="text-slate-500 text-xs mb-8">Real-time voice translation</p>
 
-      <p className="text-xs text-slate-600 mt-6 text-center">
-        No account? <a
-          href="https://voicebridgeapps.com"
-          target="_blank"
-          rel="noreferrer"
-          className="text-sky-500 hover:text-sky-400"
-        >
-          voicebridgeapps.com
-        </a>
-      </p>
+        <div className="w-full glass-card p-6 space-y-4">
+          <h2 className="font-semibold text-center text-white">Sign in to continue</h2>
+          <p className="text-xs text-slate-400 text-center">
+            Sync your license and free trial across devices.
+          </p>
+
+          <button
+            onClick={handleGoogle}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-semibold py-3 rounded-xl hover:bg-slate-100 active:scale-95 transition-all disabled:opacity-50"
+          >
+            <GoogleIcon />
+            {loading ? 'Opening browser…' : 'Continue with Google'}
+          </button>
+
+          {error && <p className="text-xs text-rose-400 text-center">{error}</p>}
+
+          <div className="border-t border-white/10 pt-3">
+            <button
+              onClick={() => onSignIn(null, null)}
+              className="w-full text-xs text-slate-500 hover:text-cyan-400 py-1.5 transition"
+            >
+              Enter license key manually →
+            </button>
+          </div>
+        </div>
+
+        <p className="text-[11px] text-slate-600 mt-6 text-center">
+          <a href="https://voicebridgeapps.com" target="_blank" rel="noreferrer" className="text-cyan-500/80 hover:text-cyan-400">
+            voicebridgeapps.com
+          </a>
+        </p>
+      </div>
     </div>
   );
 }

@@ -20,6 +20,7 @@ struct PipelineConfig {
     std::string licenseKey;
     std::string sourceLang = "auto"; /* "tr", "fr", "de" … */
     std::string targetLang = "en";
+    std::string voiceGender = "female"; /* "male" | "female" */
 
     bool   monitorEnabled  = false;  /* play TTS through speaker too */
     int    outputDeviceIndex = -1;
@@ -45,6 +46,9 @@ public:
 
     /** Update language pair on the fly (takes effect on next phrase). */
     void setLanguages(const std::string &src, const std::string &tgt);
+
+    /** Update TTS voice gender (male/female). */
+    void setVoiceGender(const std::string &gender);
 
 private:
     struct Impl;

@@ -2,7 +2,7 @@
 import { useAuth } from '../../../lib/auth';
 import clsx from 'clsx';
 
-const GITHUB_REPO = 'voicebridge-app/voicebridge';
+const GITHUB_REPO = 'Hellord92/voicebridge';
 
 export default function DownloadPage() {
   const { user, account, signInGoogle } = useAuth();
@@ -73,7 +73,7 @@ export default function DownloadPage() {
               { step: '1', title: 'Install the app', desc: 'Run the installer — the VoiceBridge Microphone virtual driver is installed automatically.' },
               { step: '2', title: 'Put on headphones', desc: 'Headphones are required to prevent audio feedback. Do not use speakers.' },
               { step: '3', title: 'Sign in with Google', desc: 'Same account you used on this website. Your minutes sync instantly.' },
-              { step: '4', title: 'Configure your meeting app', desc: 'In Zoom / Google Meet / Teams → select "VoiceBridge Microphone" as your microphone.' },
+              { step: '4', title: 'Configure your meeting app', desc: 'In Zoom, Google Meet, Teams, or WhatsApp Desktop → select "VoiceBridge Microphone" as your microphone.' },
               { step: '5', title: 'Start translating', desc: 'Press Start in VoiceBridge. Speak in your language — your audience hears the translation in real time.' },
             ].map(({ step, title, desc }) => (
               <div key={step} className="flex gap-4 bg-slate-900 border border-slate-800 rounded-xl p-4">

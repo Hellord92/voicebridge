@@ -51,7 +51,7 @@ export default function DashboardPage() {
     ? Math.round(((lic.minutes_total - lic.minutes_used) / lic.minutes_total) * 100)
     : 100;
 
-  const GITHUB_REPO = 'voicebridge-app/voicebridge';
+  const GITHUB_REPO = 'Hellord92/voicebridge';
 
   return (
     <main className="min-h-screen pt-24 pb-20 px-6">

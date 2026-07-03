@@ -9,6 +9,7 @@ try {
     startPipeline:    (opts) => { console.warn('[core] Native addon not built — using stub'); return 0; },
     stopPipeline:     ()     => {},
     setLanguages:     (s, t) => {},
+    setVoiceGender:   (g) => {},
     listInputDevices: ()     => ['Default Microphone (stub)'],
   };
 }

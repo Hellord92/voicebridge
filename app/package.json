@@ -41,10 +41,7 @@
       "extraResources": [
         { "from": "../drivers/macos/build/VoiceBridgeAudio.driver",
           "to":   "VoiceBridgeAudio.driver" }
-      ],
-      "pkg": {
-        "scripts": "electron/scripts"
-      }
+      ]
     },
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],

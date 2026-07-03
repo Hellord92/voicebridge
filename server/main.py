@@ -48,6 +48,7 @@ from services.payments      import (
 )
 from services.auth          import verify_firebase_token, is_firebase_token
 from languages import get_whisper_lang
+from voices import get_voice_id, list_voices
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 log = logging.getLogger('voicebridge.server')
@@ -236,6 +237,11 @@ async def pricing():
     ]
 
 
+@app.get('/api/voices')
+async def voices():
+    return list_voices()
+
+
 # ── Pipeline ──────────────────────────────────────────────────────────────────
 
 @app.post('/api/pipeline')
@@ -249,6 +255,7 @@ async def pipeline(
     audio_bytes = await form['audio'].read()
     source_lang = form.get('source_lang', 'auto')
     target_lang = form.get('target_lang', 'en')
+    voice_gender = str(form.get('voice_gender', 'female') or 'female')
     license_key = request.headers['Authorization'][7:]
     started_at  = datetime.now(timezone.utc)
 
@@ -263,7 +270,9 @@ async def pipeline(
         translation = await translate(transcript, source_lang, target_lang)
         translation_cache.put(ck, translation)
 
-    mp3_bytes = await synthesize_streaming(translation, target_lang)
+    mp3_bytes = await synthesize_streaming(
+        translation, target_lang, voice_id=get_voice_id(voice_gender),
+    )
     audio_b64 = base64.b64encode(mp3_bytes).decode('ascii')
 
     # Consume minutes (non-free licenses)

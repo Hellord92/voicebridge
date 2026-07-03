@@ -25,8 +25,8 @@ export default function LicenseGate({ settings, licensed, licenseInfo, onActivat
   const pct = minutesTotal ? Math.round((minutesLeft / minutesTotal) * 100) : 0;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-slate-700">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-[#0f0f18] rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-white/10">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-white">License</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">×</button>
