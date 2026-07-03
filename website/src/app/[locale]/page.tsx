@@ -110,6 +110,7 @@ export default function HomePage() {
       <Hero t={t} />
       <Stats t={t} />
       <HowItWorks t={t} />
+      <UseCases />
       <Features t={t} />
       <Languages t={t} />
       <PricingTeaser t={t} />
@@ -474,6 +475,130 @@ function Languages({ t }: { t: ReturnType<typeof useTranslations> }) {
           +76 more languages
         </span>
       </FadeIn>
+    </section>
+  );
+}
+
+/* ── Use Cases ────────────────────────────────────────────────────────────── */
+const USE_CASES = [
+  {
+    emoji: '💼',
+    title: 'Business Meetings',
+    subtitle: 'Close deals across languages',
+    desc: 'Join Zoom, Teams, or Google Meet with foreign clients. You speak your language — they hear a fluent translation in theirs, instantly.',
+    tags: ['Zoom', 'Teams', 'Google Meet'],
+    stat: { value: '80%', label: 'of workers are more productive in their native language' },
+    color: 'from-cyan-500 to-blue-600',
+    glow: 'rgba(0,200,255,0.12)',
+  },
+  {
+    emoji: '🎓',
+    title: 'Online Classes',
+    subtitle: 'Teach without language barriers',
+    desc: 'Deliver lectures or tutoring sessions to international students. Real-time translation keeps every student engaged in their own language.',
+    tags: ['Udemy', 'Teachable', 'Zoom'],
+    stat: { value: '3×', label: 'more student retention when taught in native language' },
+    color: 'from-violet-500 to-purple-600',
+    glow: 'rgba(124,58,237,0.12)',
+  },
+  {
+    emoji: '🌍',
+    title: 'Customer Support',
+    subtitle: 'Support customers worldwide',
+    desc: 'Handle international support calls fluently. No interpreter needed — VoiceBridge translates in real-time so you stay focused on helping.',
+    tags: ['WhatsApp', 'Intercom', 'Phone'],
+    stat: { value: '25%', label: 'of businesses lose customers to language barriers' },
+    color: 'from-emerald-500 to-teal-600',
+    glow: 'rgba(16,185,129,0.12)',
+  },
+];
+
+function UseCases() {
+  const [active, setActive] = useState(0);
+  const uc = USE_CASES[active];
+
+  return (
+    <section className="py-32 px-6">
+      <div className="max-w-5xl mx-auto">
+        <FadeUp className="text-center mb-16">
+          <span className="inline-block text-xs font-bold tracking-widest uppercase mb-4 px-3 py-1 rounded-full"
+            style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', color: '#67e8f9' }}>
+            Who uses VoiceBridge
+          </span>
+          <h2 className="text-4xl md:text-6xl font-extrabold mb-4">
+            Built for <span style={{ background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>real conversations</span>
+          </h2>
+          <p className="text-slate-400 text-xl">One tool, every scenario where language gets in the way.</p>
+        </FadeUp>
+
+        {/* Tab buttons */}
+        <div className="flex gap-2 justify-center mb-12 flex-wrap">
+          {USE_CASES.map((u, i) => (
+            <button key={i} onClick={() => setActive(i)}
+              className="px-5 py-2.5 rounded-full text-sm font-semibold transition-all"
+              style={active === i
+                ? { background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', color: '#000' }
+                : { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}>
+              {u.emoji} {u.title}
+            </button>
+          ))}
+        </div>
+
+        {/* Active card */}
+        <AnimatePresence mode="wait">
+          <motion.div key={active}
+            initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="grid md:grid-cols-2 gap-6">
+
+            {/* Left — description */}
+            <TiltCard glowColor={uc.glow} className="rounded-2xl p-8 flex flex-col justify-between"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div>
+                <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${uc.color} flex items-center justify-center text-3xl mb-6 shadow-lg`}>
+                  {uc.emoji}
+                </div>
+                <h3 className="text-2xl font-extrabold text-white mb-1">{uc.title}</h3>
+                <p className="text-sm text-slate-400 mb-5">{uc.subtitle}</p>
+                <p className="text-slate-300 leading-relaxed">{uc.desc}</p>
+              </div>
+              <div className="mt-8 flex flex-wrap gap-2">
+                {uc.tags.map(tag => (
+                  <span key={tag} className="px-3 py-1 rounded-full text-xs font-semibold"
+                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}>
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </TiltCard>
+
+            {/* Right — stat + CTA */}
+            <div className="flex flex-col gap-4">
+              <TiltCard glowColor={uc.glow} className="rounded-2xl p-8 flex-1 flex flex-col justify-center"
+                style={{ background: `linear-gradient(135deg, rgba(0,200,255,0.05), rgba(124,58,237,0.05))`, border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div className="text-6xl font-black mb-3"
+                  style={{ background: `linear-gradient(90deg,#00c8ff,#7c3aed)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                  {uc.stat.value}
+                </div>
+                <p className="text-slate-400 text-sm leading-relaxed">{uc.stat.label}</p>
+              </TiltCard>
+
+              <TiltCard glowColor="rgba(0,200,255,0.1)" className="rounded-2xl p-6 flex items-center justify-between gap-4"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(0,200,255,0.15)' }}>
+                <div>
+                  <p className="font-bold text-white mb-1">Start free — no subscription</p>
+                  <p className="text-xs text-slate-400">5 free minutes, then pay only for what you use.</p>
+                </div>
+                <Link href="/download"
+                  className="flex-shrink-0 px-5 py-2.5 rounded-xl font-bold text-sm transition-all"
+                  style={{ background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', color: '#000' }}>
+                  Download
+                </Link>
+              </TiltCard>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
     </section>
   );
 }
