@@ -1,6 +1,6 @@
 {
   "meta_title":      "VoiceBridge — Gerçek Zamanlı Ses Çevirisi",
-  "meta_description": "İstediğin dilde konuş, karşı taraf kendi dilinde duysun. 1.2 saniyenin altında. Zoom, Meet ve Teams ile çalışır.",
+  "meta_description": "İstediğin dilde konuş, karşı taraf kendi dilinde duysun. Genelde 2 saniyenin altında. Zoom, Meet ve Teams ile çalışır.",
 
   "nav_how":         "Nasıl çalışır",
   "nav_pricing":     "Fiyatlar",
@@ -16,8 +16,8 @@
   "hero_cta_primary":    "Ücretsiz Başla",
   "hero_cta_secondary":  "Nasıl çalışır?",
 
-  "stats_langs":     "50 Dil",
-  "stats_latency":   "< 1.2s Gecikme",
+  "stats_langs":     "100 Dil",
+  "stats_latency":   "< 1s Gecikme",
   "stats_platforms": "macOS + Windows",
   "stats_trial":     "5 dk Ücretsiz Deneme",
   "stats_secure":    "API Anahtarları Korunur",
@@ -35,10 +35,10 @@
   "how_3_desc":      "Kendi dilinde doğal şekilde konuş. Karşı taraf çevirilmiş sesi anında kendi dilinde duyar.",
 
   "features_title":  "Profesyonel toplantılar için tasarlandı",
-  "feat_1_title":    "50 Dil",
-  "feat_1_desc":     "Türkçe, İngilizce, İspanyolca, Fransızca, Arapça, Japonca, Çince, Hintçe ve 42 dil daha.",
-  "feat_2_title":    "1.2 Saniyenin Altında",
-  "feat_2_desc":     "Konuşma tanıma, çeviri ve ses sentezi — uçtan uca 1.2 saniyenin altında.",
+  "feat_1_title":    "100 Dil",
+  "feat_1_desc":     "Türkçe, İngilizce, İspanyolca, Fransızca, Arapça, Japonca, Çince, Hintçe ve 92 dil daha.",
+  "feat_2_title":    "1 Saniyenin Altında",
+  "feat_2_desc":     "Konuşma tanıma, çeviri ve ses sentezi — uçtan uca genelde 1 saniyenin altında.",
   "feat_3_title":    "Sıfır Yapılandırma",
   "feat_3_desc":     "Sanal mikrofon olarak çalışır. BlackHole, Loopback veya ses yönlendirme derdi yok.",
   "feat_4_title":    "API Anahtarları Asla İfşa Olmaz",
@@ -48,7 +48,7 @@
   "feat_6_title":    "Dakikalar Asla Sona Ermez",
   "feat_6_desc":     "Bir kez dakika paketi satın al. İstediğin hızda kullan — aylık abonelik yok, sürpriz ücret yok.",
 
-  "langs_title":     "50 dil arasında çeviri yap",
+  "langs_title":     "100 dil arasında çeviri yap",
   "langs_sub":       "Her pakette tüm diller dahildir — ek ödeme yok.",
 
   "pricing_teaser_title":  "Basit, dakika bazlı fiyatlandırma",
@@ -67,6 +67,7 @@
   "footer_download": "İndir",
   "footer_pricing":  "Fiyatlar",
   "footer_dashboard":"Hesabım",
+  "footer_contact":  "İletişim",
   "footer_legal":    "© 2025 VoiceBridge. Tüm hakları saklıdır.",
   "footer_privacy":  "Gizlilik",
   "footer_terms":    "Koşullar"

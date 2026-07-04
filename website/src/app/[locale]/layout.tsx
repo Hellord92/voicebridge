@@ -5,6 +5,7 @@ import { getMessages, setRequestLocale } from 'next-intl/server';
 import { locales } from '../../i18n';
 import { AuthProvider } from '../../lib/auth';
 import Navbar from '../../components/Navbar';
+import Footer from '../../components/Footer';
 import '../globals.css';
 
 export function generateStaticParams() {
@@ -45,6 +46,7 @@ export default async function LocaleLayout({
           <AuthProvider>
             <Navbar />
             {children}
+            <Footer />
           </AuthProvider>
         </NextIntlClientProvider>
       </body>

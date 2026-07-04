@@ -1,6 +1,6 @@
 {
   "meta_title":      "VoiceBridge — Real-time Voice Translation",
-  "meta_description": "Speak any language, your audience hears their own. Under 1.2 seconds. Works with Zoom, Meet & Teams.",
+  "meta_description": "Speak any language, your audience hears their own. Typically under 1 second. Works with Zoom, Meet & Teams.",
 
   "nav_how":         "How it works",
   "nav_pricing":     "Pricing",
@@ -16,8 +16,8 @@
   "hero_cta_primary":    "Get Started Free",
   "hero_cta_secondary":  "See how it works",
 
-  "stats_langs":     "50 Languages",
-  "stats_latency":   "< 1.2s Latency",
+  "stats_langs":     "100 Languages",
+  "stats_latency":   "< 1s Latency",
   "stats_platforms": "macOS + Windows",
   "stats_trial":     "5-min Free Trial",
   "stats_secure":    "API Keys Protected",
@@ -35,10 +35,10 @@
   "how_3_desc":      "Talk naturally in your language. The other side hears a fluent translation in their language — instantly.",
 
   "features_title":  "Built for professional meetings",
-  "feat_1_title":    "50 Languages",
-  "feat_1_desc":     "English, Turkish, Spanish, French, Arabic, Japanese, Chinese, Hindi, and 42 more.",
-  "feat_2_title":    "Under 1.2 seconds",
-  "feat_2_desc":     "End-to-end pipeline — speech recognition, translation, and synthesis — in under 1.2 seconds.",
+  "feat_1_title":    "100 Languages",
+  "feat_1_desc":     "English, Turkish, Spanish, French, Arabic, Japanese, Chinese, Hindi, and 92 more.",
+  "feat_2_title":    "Under 1 second",
+  "feat_2_desc":     "End-to-end pipeline — speech recognition, translation, and synthesis — typically under 1 second.",
   "feat_3_title":    "Zero configuration",
   "feat_3_desc":     "Works as a virtual microphone. No BlackHole, no Loopback, no audio routing nightmares.",
   "feat_4_title":    "API keys never exposed",
@@ -48,7 +48,7 @@
   "feat_6_title":    "Minutes never expire",
   "feat_6_desc":     "Buy a pack once. Use them at your own pace — no monthly subscriptions, no surprise charges.",
 
-  "langs_title":     "Translate between 50 languages",
+  "langs_title":     "Translate between 100 languages",
   "langs_sub":       "Every plan includes all languages — no add-ons.",
 
   "pricing_teaser_title":  "Simple, minute-based pricing",
@@ -67,6 +67,7 @@
   "footer_download": "Download",
   "footer_pricing":  "Pricing",
   "footer_dashboard":"Dashboard",
+  "footer_contact":  "Contact us",
   "footer_legal":    "© 2025 VoiceBridge. All rights reserved.",
   "footer_privacy":  "Privacy",
   "footer_terms":    "Terms"
