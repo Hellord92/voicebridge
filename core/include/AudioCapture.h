@@ -25,8 +25,21 @@ int vb_capture_start(VBAudioCapture *cap, VBAudioCaptureCallback cb, void *userD
 void vb_capture_stop(VBAudioCapture *cap);
 void vb_capture_destroy(VBAudioCapture *cap);
 
-/** List available input devices; returns count. Fill outNames[maxCount]. */
-int vb_capture_list_devices(char outNames[][128], int maxCount);
+/** Device descriptor returned by list/refresh functions. */
+typedef struct {
+    int  paIndex;      /* real PortAudio device index, pass to vb_capture_create() */
+    char name[128];
+} VBDeviceInfo;
+
+/** List available input devices; returns count. */
+int vb_capture_list_devices(VBDeviceInfo outDevices[], int maxCount);
+
+/**
+ * Refresh PortAudio device list (Pa_Terminate + Pa_Initialize).
+ * Call when new hardware is connected. Safe to call while no stream is open.
+ * Returns updated device count, or -1 on error.
+ */
+int vb_capture_refresh_devices(VBDeviceInfo outDevices[], int maxCount);
 
 #ifdef __cplusplus
 }

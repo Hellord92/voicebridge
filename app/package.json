@@ -6,8 +6,10 @@
   "main": "electron/main.js",
   "private": true,
   "scripts": {
-    "dev":     "concurrently \"vite\" \"electron .\"",
+    "dev":     "concurrently -k \"vite --strictPort\" \"npx --yes wait-on@8.0.1 http://127.0.0.1:5173 && electron .\"",
     "build":   "vite build && electron-builder",
+    "build:mac": "vite build && electron-builder --arm64 --mac dmg",
+    "build:mac:signed": "vite build && electron-builder --arm64 --mac dmg --config.mac.notarize=false",
     "preview": "vite preview",
     "rebuild-core": "cd ../core && npm run build"
   },
@@ -32,12 +34,21 @@
     "appId":   "app.voicebridge",
     "productName": "VoiceBridge",
     "icon": "assets/icon.png",
+    "dmg": {
+      "window":      { "width": 640, "height": 440 },
+      "iconSize":    160,
+      "iconTextSize": 14
+    },
     "mac": {
       "category":    "public.app-category.utilities",
       "target":      [{ "target": "dmg", "arch": ["arm64", "x64"] }],
       "hardenedRuntime": true,
+      "gatekeeperAssess": false,
       "entitlements": "electron/entitlements.mac.plist",
       "entitlementsInherit": "electron/entitlements.mac.plist",
+      "notarize": {
+        "teamId": "323TN47N72"
+      },
       "extraResources": [
         { "from": "../drivers/macos/build/VoiceBridgeAudio.driver",
           "to":   "VoiceBridgeAudio.driver" }
@@ -61,7 +72,12 @@
       "electron/**/*",
       "assets/**/*",
       "node_modules/**/*",
-      "!node_modules/@voicebridge/core/src/**"
+      "!node_modules/@voicebridge/core/src/**",
+      "!node_modules/@voicebridge/core/build/node_gyp_bins/**"
+    ],
+    "asarUnpack": [
+      "node_modules/@voicebridge/**",
+      "node_modules/@voicebridge/core/build/Release/*.node"
     ]
   }
 }

@@ -2,6 +2,7 @@
 #include "../include/AudioPipeline.h"
 #include "../include/AudioCapture.h"
 #include <memory>
+#include <thread>
 
 static std::unique_ptr<AudioPipeline> gPipeline;
 
@@ -19,12 +20,20 @@ Napi::Value StartPipeline(const Napi::CallbackInfo &info)
     if (opts.Has("sourceLang"))  cfg.sourceLang  = opts.Get("sourceLang").As<Napi::String>().Utf8Value();
     if (opts.Has("targetLang"))  cfg.targetLang  = opts.Get("targetLang").As<Napi::String>().Utf8Value();
     if (opts.Has("voiceGender")) cfg.voiceGender = opts.Get("voiceGender").As<Napi::String>().Utf8Value();
+    if (opts.Has("glossaryJson")) cfg.glossaryJson = opts.Get("glossaryJson").As<Napi::String>().Utf8Value();
 
     /* JS callbacks */
     if (opts.Has("onTranscript")) {
         auto fn = opts.Get("onTranscript").As<Napi::Function>();
         auto tsfn = Napi::ThreadSafeFunction::New(env, fn, "transcript", 0, 1);
         cfg.transcriptCallback = [tsfn](const std::string &t) mutable {
+            tsfn.NonBlockingCall([t](Napi::Env e, Napi::Function cb){ cb.Call({Napi::String::New(e, t)}); });
+        };
+    }
+    if (opts.Has("onPartialTranscript")) {
+        auto fn = opts.Get("onPartialTranscript").As<Napi::Function>();
+        auto tsfn = Napi::ThreadSafeFunction::New(env, fn, "partialTranscript", 0, 1);
+        cfg.partialTranscriptCallback = [tsfn](const std::string &t) mutable {
             tsfn.NonBlockingCall([t](Napi::Env e, Napi::Function cb){ cb.Call({Napi::String::New(e, t)}); });
         };
     }
@@ -43,6 +52,14 @@ Napi::Value StartPipeline(const Napi::CallbackInfo &info)
         };
     }
 
+    if (opts.Has("onLatency")) {
+        auto fn = opts.Get("onLatency").As<Napi::Function>();
+        auto tsfn = Napi::ThreadSafeFunction::New(env, fn, "latency", 0, 1);
+        cfg.latencyCallback = [tsfn](int ms) mutable {
+            tsfn.NonBlockingCall([ms](Napi::Env e, Napi::Function cb){ cb.Call({Napi::Number::New(e, ms)}); });
+        };
+    }
+
     gPipeline = std::make_unique<AudioPipeline>(cfg);
     int rc = gPipeline->start();
     return Napi::Number::New(env, rc);
@@ -50,8 +67,10 @@ Napi::Value StartPipeline(const Napi::CallbackInfo &info)
 
 Napi::Value StopPipeline(const Napi::CallbackInfo &info)
 {
-    if (gPipeline) gPipeline->stop();
-    gPipeline.reset();
+    if (gPipeline) {
+        gPipeline->stop();
+        gPipeline.reset();
+    }
     return info.Env().Undefined();
 }
 
@@ -74,24 +93,46 @@ Napi::Value SetVoiceGender(const Napi::CallbackInfo &info)
     return env.Undefined();
 }
 
+static Napi::Array DeviceInfosToArray(Napi::Env env, VBDeviceInfo devs[], int count)
+{
+    auto arr = Napi::Array::New(env, (size_t)count);
+    for (int i = 0; i < count; i++) {
+        auto obj = Napi::Object::New(env);
+        obj.Set("index", Napi::Number::New(env, devs[i].paIndex));
+        obj.Set("name",  Napi::String::New(env, devs[i].name));
+        arr.Set((uint32_t)i, obj);
+    }
+    return arr;
+}
+
 Napi::Value ListInputDevices(const Napi::CallbackInfo &info)
 {
     Napi::Env env = info.Env();
-    char names[64][128] = {};
-    int count = vb_capture_list_devices(names, 64);
-    auto arr = Napi::Array::New(env, (size_t)count);
-    for (int i = 0; i < count; i++)
-        arr.Set((uint32_t)i, Napi::String::New(env, names[i]));
-    return arr;
+    VBDeviceInfo devs[64] = {};
+    int count = vb_capture_list_devices(devs, 64);
+    return DeviceInfosToArray(env, devs, count);
+}
+
+Napi::Value RefreshDevices(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    VBDeviceInfo devs[64] = {};
+    int count = vb_capture_refresh_devices(devs, 64);
+    if (count < 0) {
+        Napi::Error::New(env, "PortAudio refresh failed").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    return DeviceInfosToArray(env, devs, count);
 }
 
 Napi::Object Init(Napi::Env env, Napi::Object exports)
 {
-    exports.Set("startPipeline",   Napi::Function::New(env, StartPipeline));
-    exports.Set("stopPipeline",    Napi::Function::New(env, StopPipeline));
-    exports.Set("setLanguages",    Napi::Function::New(env, SetLanguages));
-    exports.Set("setVoiceGender",  Napi::Function::New(env, SetVoiceGender));
-    exports.Set("listInputDevices",Napi::Function::New(env, ListInputDevices));
+    exports.Set("startPipeline",    Napi::Function::New(env, StartPipeline));
+    exports.Set("stopPipeline",     Napi::Function::New(env, StopPipeline));
+    exports.Set("setLanguages",     Napi::Function::New(env, SetLanguages));
+    exports.Set("setVoiceGender",   Napi::Function::New(env, SetVoiceGender));
+    exports.Set("listInputDevices", Napi::Function::New(env, ListInputDevices));
+    exports.Set("refreshDevices",   Napi::Function::New(env, RefreshDevices));
     return exports;
 }
 

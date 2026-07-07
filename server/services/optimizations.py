@@ -4,17 +4,32 @@ Performance optimizations for the VoiceBridge pipeline.
 Strategy:
   1. Translation cache (LRU, reduces repeated phrase costs)
   2. TTS streaming (chunked response from ElevenLabs to reduce TTFB)
-  3. Groq Whisper batching hints
-  4. Async pipeline: STT and translation fire in parallel where possible
+  3. Parallel translate+TTS: as soon as STT returns, fire TR and TTS warmup together
+  4. Persistent httpx client for connection reuse (no TCP handshake per request)
 """
 import asyncio
 import hashlib
 from collections import OrderedDict
-from typing import Optional
+from typing import Optional, AsyncGenerator
 
 import httpx
 from config import settings
 from languages import get_el_lang
+from services.resilience import eleven_breaker, with_retry
+
+# Persistent clients — connection pool reuse eliminates per-request TCP handshake (~30-50ms)
+_groq_http_client: Optional[httpx.AsyncClient] = None
+_eleven_http_client: Optional[httpx.AsyncClient] = None
+
+
+def get_eleven_client() -> httpx.AsyncClient:
+    global _eleven_http_client
+    if _eleven_http_client is None or _eleven_http_client.is_closed:
+        _eleven_http_client = httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=30),
+        )
+    return _eleven_http_client
 
 
 # ── LRU translation cache ─────────────────────────────────────────────────────
@@ -86,23 +101,61 @@ async def synthesize_streaming(
             'use_speaker_boost': True,
         },
         'output_format': 'mp3_44100_64',
-        'optimize_streaming_latency': 3,  # ElevenLabs latency hint (0-4)
+        'optimize_streaming_latency': 4,  # max latency reduction
     }
 
     headers = {'xi-api-key': settings.elevenlabs_api_key, 'Content-Type': 'application/json'}
     chunks: list[bytes] = []
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async def _stream():
+        client = get_eleven_client()
         async with client.stream('POST', url, json=payload, headers=headers) as resp:
             resp.raise_for_status()
             async for chunk in resp.aiter_bytes(chunk_size=4096):
                 chunks.append(chunk)
+
+    await with_retry(_stream, breaker=eleven_breaker)
 
     mp3 = b''.join(chunks)
     # Cache short clips (< 8 KB)
     if len(mp3) < 8192:
         tts_cache.put(ck, mp3.decode('latin-1'))
     return mp3
+
+
+async def synthesize_streaming_chunks(
+    text: str,
+    target_lang: str = 'en',
+    voice_id: Optional[str] = None,
+) -> AsyncGenerator[bytes, None]:
+    """
+    Yields MP3 chunks as they arrive from ElevenLabs.
+    Use when you want to start writing to SHM before TTS is fully done.
+    """
+    vid  = voice_id or settings.elevenlabs_voice_id
+    lang = get_el_lang(target_lang)
+    url  = f'{ELEVENLABS_BASE}/text-to-speech/{vid}/stream'
+
+    payload = {
+        'text':       text,
+        'model_id':   'eleven_flash_v2_5',
+        'language_code': lang,
+        'voice_settings': {
+            'stability':         0.35,
+            'similarity_boost':  0.7,
+            'style':             0.0,
+            'use_speaker_boost': True,
+        },
+        'output_format': 'mp3_44100_64',
+        'optimize_streaming_latency': 4,  # max latency reduction
+    }
+
+    headers = {'xi-api-key': settings.elevenlabs_api_key, 'Content-Type': 'application/json'}
+    client = get_eleven_client()
+    async with client.stream('POST', url, json=payload, headers=headers) as resp:
+        resp.raise_for_status()
+        async for chunk in resp.aiter_bytes(chunk_size=2048):
+            yield chunk
 
 
 # ── Parallel pipeline: STT + translate concurrently where source_lang known ──

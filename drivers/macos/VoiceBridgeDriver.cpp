@@ -29,8 +29,10 @@
 
 #include "VoiceBridgeDriver.h"
 
+#include <CoreAudio/AudioHardware.h>
 #include <CoreAudio/AudioServerPlugIn.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <mach/mach_time.h>
 #include <os/log.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -40,6 +42,15 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+
+static Boolean VBUUIDMatches(REFIID id, CFUUIDRef uuid)
+{
+    CFUUIDRef idRef = CFUUIDCreateFromUUIDBytes(kCFAllocatorDefault, id);
+    if (!idRef) return false;
+    Boolean eq = CFEqual(idRef, uuid);
+    CFRelease(idRef);
+    return eq;
+}
 
 /* ─────────────────────────────── constants ─────────────────────────────── */
 
@@ -52,28 +63,23 @@
 #define VB_CHANNEL_COUNT 1u
 #define VB_FRAMES        512u           /* frames per IO cycle             */
 #define VB_BYTES_PER_FRAME 4u           /* float32                         */
-
-/* 4 seconds of mono float32 @ 48 kHz — large enough to absorb jitter */
-#define VB_BUF_BYTES (48000u * 4u * VB_BYTES_PER_FRAME)
+#define VB_ZERO_TS_PERIOD VB_FRAMES     /* frames between zero timestamps = IO buffer size */
 
 #define VB_SHM_NAME "/voicebridge_shm"
 
+/* Object IDs: each AudioServerPlugin has its own namespace, small ints are fine */
+#define VB_DEVICE_OBJECT_ID    2u
+#define VB_STREAM_OBJECT_ID    3u
+
 static os_log_t gLog;
 
-/* ─────────────────────────────── shared memory ──────────────────────────── */
-
-typedef struct {
-    _Atomic uint32_t writePos;   /* app writes here   */
-    _Atomic uint32_t readPos;    /* driver reads here */
-    uint8_t          buf[VB_BUF_BYTES];
-} VBSharedRing;
 
 /* ─────────────────────────────── driver state ───────────────────────────── */
 
 typedef struct {
     AudioServerPlugInDriverInterface *mInterface;   /* MUST be first */
     AudioServerPlugInDriverInterface  mInterfaceImpl;
-    AudioServerPlugInHostInterface   *mHost;
+    const AudioServerPlugInHostInterface *mHost;
 
     /* ref count */
     volatile int32_t mRefCount;
@@ -95,6 +101,10 @@ typedef struct {
     /* shared memory */
     VBSharedRing   *mRing;
     int             mShmFd;
+
+    /* underrun crossfade state (stereo float) */
+    float           mLastSampleL;
+    float           mLastSampleR;
 } VBDriver;
 
 static VBDriver *gDriver = NULL;
@@ -169,7 +179,8 @@ static OSStatus VBDriver_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriver,
                                           AudioObjectID inDeviceObjectID,
                                           UInt32 inClientID,
                                           Float64 *outSampleTime,
-                                          UInt64 *outHostTime);
+                                          UInt64 *outHostTime,
+                                          UInt64 *outSeed);
 static OSStatus VBDriver_WillDoIOOperation(AudioServerPlugInDriverRef inDriver,
                                            AudioObjectID inDeviceObjectID,
                                            UInt32 inClientID,
@@ -263,9 +274,8 @@ void *VoiceBridgeAudioDriverEntryPoint(CFAllocatorRef inAllocator,
 
 static HRESULT VBDriver_QueryInterface(void *inDriver, REFIID inUUID, LPVOID *outInterface)
 {
-    if (!CFEqual(inUUID, IUnknownUUID) &&
-        !CFEqual(inUUID, kAudioServerPlugInDriverInterfaceUUID) &&
-        !CFEqual(inUUID, kAudioServerPlugInDriverInterface2UUID)) {
+    if (!VBUUIDMatches(inUUID, IUnknownUUID) &&
+        !VBUUIDMatches(inUUID, kAudioServerPlugInDriverInterfaceUUID)) {
         *outInterface = NULL;
         return E_NOINTERFACE;
     }
@@ -302,32 +312,43 @@ static OSStatus VBDriver_Initialize(AudioServerPlugInDriverRef inDriver,
     VBDriver *d = (VBDriver *)inDriver;
     d->mHost = inHost;
 
-    /* Host tick rate — used for GetZeroTimeStamp */
-    struct mach_timebase_info tbi;
+    /* Host ticks per audio frame: (ns/frame) * (ticks/ns)
+       mach ticks → ns: multiply by numer/denom
+       ns → mach ticks: multiply by denom/numer
+       ns per frame = 1e9 / VB_SAMPLE_RATE
+       ticks per frame = (1e9 / VB_SAMPLE_RATE) * (denom / numer)        */
+    mach_timebase_info_data_t tbi;
     mach_timebase_info(&tbi);
-    d->mHostTicksPerFrame = (VB_SAMPLE_RATE / 1.0e9) *
+    d->mHostTicksPerFrame = (1.0e9 / VB_SAMPLE_RATE) *
                              ((double)tbi.denom / (double)tbi.numer);
 
-    /* Open / create shared memory */
+    /* Assign hardcoded object IDs — device list returned to HAL */
+    d->mDeviceObjectID      = VB_DEVICE_OBJECT_ID;
+    d->mStreamInputObjectID = VB_STREAM_OBJECT_ID;
+
+    /* Open / create shared memory (non-fatal: device appears even if shm fails) */
     d->mShmFd = shm_open(VB_SHM_NAME, O_RDWR | O_CREAT, 0666);
     if (d->mShmFd < 0) {
-        os_log_error(gLog, "shm_open failed: %d", errno);
-        return kAudioHardwareUnspecifiedError;
-    }
-    ftruncate(d->mShmFd, (off_t)sizeof(VBSharedRing));
-    d->mRing = (VBSharedRing *)mmap(NULL, sizeof(VBSharedRing),
-                                    PROT_READ | PROT_WRITE, MAP_SHARED,
-                                    d->mShmFd, 0);
-    if (d->mRing == MAP_FAILED) {
+        os_log_error(gLog, "shm_open failed errno=%d — device will output silence", errno);
         d->mRing = NULL;
-        os_log_error(gLog, "mmap failed: %d", errno);
-        return kAudioHardwareUnspecifiedError;
+    } else {
+        ftruncate(d->mShmFd, (off_t)sizeof(VBSharedRing));
+        d->mRing = (VBSharedRing *)mmap(NULL, sizeof(VBSharedRing),
+                                        PROT_READ | PROT_WRITE, MAP_SHARED,
+                                        d->mShmFd, 0);
+        if (d->mRing == MAP_FAILED) {
+            os_log_error(gLog, "mmap failed errno=%d — device will output silence", errno);
+            d->mRing = NULL;
+        }
     }
 
-    /* Register objects with the HAL */
-    AudioServerPlugInMutableObjectList objects = NULL;
-    OSStatus err = d->mHost->PropertiesChanged(d->mHost, kAudioObjectSystemObject, 0, NULL);
-    (void)objects; (void)err;
+    /* Notify HAL: device list changed → triggers GetPropertyData(kAudioPlugInPropertyDeviceList) */
+    AudioObjectPropertyAddress deviceListAddr = {
+        kAudioPlugInPropertyDeviceList,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain
+    };
+    (void)d->mHost->PropertiesChanged(d->mHost, kAudioObjectSystemObject, 1, &deviceListAddr);
 
     os_log_info(gLog, "VoiceBridge driver initialized, shm mapped");
     return kAudioHardwareNoError;
@@ -394,50 +415,72 @@ static Boolean VBDriver_HasProperty(AudioServerPlugInDriverRef inDriver,
                                     const AudioObjectPropertyAddress *inAddress)
 {
     (void)inDriver; (void)inClientProcessID;
+    VBDriver *d = (VBDriver *)inDriver;
+
     switch (inObjectID) {
-        /* Plugin level */
         case kAudioObjectSystemObject:
             switch (inAddress->mSelector) {
-                case kAudioObjectPropertyManufacturer:
+                case kAudioObjectPropertyClass:
+                case kAudioObjectPropertyBaseClass:
                 case kAudioObjectPropertyName:
+                case kAudioObjectPropertyManufacturer:
+                case kAudioObjectPropertyOwnedObjects:
+                case kAudioPlugInPropertyDeviceList:
+                case kAudioPlugInPropertyBoxList:
+                case kAudioPlugInPropertyTranslateUIDToDevice:
                     return true;
                 default: return false;
             }
         default:
-            /* Device / stream / box selectors handled below */
-            switch (inAddress->mSelector) {
-                case kAudioObjectPropertyName:
-                case kAudioObjectPropertyManufacturer:
-                case kAudioDevicePropertyDeviceUID:
-                case kAudioDevicePropertyModelUID:
-                case kAudioDevicePropertyTransportType:
-                case kAudioDevicePropertyRelatedDevices:
-                case kAudioDevicePropertyClockDomain:
-                case kAudioDevicePropertyDeviceIsAlive:
-                case kAudioDevicePropertyDeviceIsRunning:
-                case kAudioDevicePropertyDeviceCanBeDefaultDevice:
-                case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
-                case kAudioDevicePropertyLatency:
-                case kAudioDevicePropertyStreams:
-                case kAudioObjectPropertyControlList:
-                case kAudioDevicePropertySafetyOffset:
-                case kAudioDevicePropertyNominalSampleRate:
-                case kAudioDevicePropertyAvailableNominalSampleRates:
-                case kAudioDevicePropertyIsHidden:
-                case kAudioDevicePropertyPreferredChannelsForStereo:
-                case kAudioDevicePropertyPreferredChannelLayout:
-                case kAudioStreamPropertyIsActive:
-                case kAudioStreamPropertyDirection:
-                case kAudioStreamPropertyTerminalType:
-                case kAudioStreamPropertyStartingChannel:
-                case kAudioStreamPropertyLatency:
-                case kAudioStreamPropertyVirtualFormat:
-                case kAudioStreamPropertyPhysicalFormat:
-                case kAudioStreamPropertyAvailableVirtualFormats:
-                case kAudioStreamPropertyAvailablePhysicalFormats:
-                    return true;
-                default: return false;
+            if (inObjectID == d->mDeviceObjectID) {
+                switch (inAddress->mSelector) {
+                    case kAudioObjectPropertyClass:
+                    case kAudioObjectPropertyBaseClass:
+                    case kAudioObjectPropertyName:
+                    case kAudioObjectPropertyManufacturer:
+                    case kAudioObjectPropertyOwner:
+                    case kAudioObjectPropertyOwnedObjects:
+                    case kAudioDevicePropertyDeviceUID:
+                    case kAudioDevicePropertyModelUID:
+                    case kAudioDevicePropertyTransportType:
+                    case kAudioDevicePropertyRelatedDevices:
+                    case kAudioDevicePropertyClockDomain:
+                    case kAudioDevicePropertyDeviceIsAlive:
+                    case kAudioDevicePropertyDeviceIsRunning:
+                    case kAudioDevicePropertyDeviceCanBeDefaultDevice:
+                    case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
+                    case kAudioDevicePropertyLatency:
+                    case kAudioDevicePropertyStreams:
+                    case kAudioObjectPropertyControlList:
+                    case kAudioDevicePropertySafetyOffset:
+                    case kAudioDevicePropertyNominalSampleRate:
+                    case kAudioDevicePropertyAvailableNominalSampleRates:
+                    case kAudioDevicePropertyIsHidden:
+                    case kAudioDevicePropertyZeroTimeStampPeriod:
+                    case kAudioDevicePropertyPreferredChannelsForStereo:
+                    case kAudioDevicePropertyPreferredChannelLayout:
+                        return true;
+                    default: return false;
+                }
+            } else if (inObjectID == d->mStreamInputObjectID) {
+                switch (inAddress->mSelector) {
+                    case kAudioObjectPropertyClass:
+                    case kAudioObjectPropertyBaseClass:
+                    case kAudioObjectPropertyName:
+                    case kAudioObjectPropertyOwner:
+                    case kAudioStreamPropertyIsActive:
+                    case kAudioStreamPropertyDirection:
+                    case kAudioStreamPropertyTerminalType:
+                    case kAudioStreamPropertyStartingChannel:
+                    case kAudioStreamPropertyVirtualFormat:
+                    case kAudioStreamPropertyPhysicalFormat:
+                    case kAudioStreamPropertyAvailableVirtualFormats:
+                    case kAudioStreamPropertyAvailablePhysicalFormats:
+                        return true;
+                    default: return false;
+                }
             }
+            return false;
     }
 }
 
@@ -469,66 +512,126 @@ static OSStatus VBDriver_GetPropertyDataSize(AudioServerPlugInDriverRef inDriver
                                              const void *inQualifierData,
                                              UInt32 *outDataSize)
 {
-    (void)inDriver; (void)inObjectID; (void)inClientProcessID;
+    (void)inClientProcessID;
     (void)inQualifierDataSize; (void)inQualifierData;
+    VBDriver *d = (VBDriver *)inDriver;
 
-    switch (inAddress->mSelector) {
-        case kAudioObjectPropertyName:
-        case kAudioObjectPropertyManufacturer:
-        case kAudioDevicePropertyDeviceUID:
-        case kAudioDevicePropertyModelUID:
-            *outDataSize = sizeof(CFStringRef);
-            break;
-        case kAudioDevicePropertyTransportType:
-        case kAudioDevicePropertyClockDomain:
-        case kAudioDevicePropertyDeviceIsAlive:
-        case kAudioDevicePropertyDeviceIsRunning:
-        case kAudioDevicePropertyDeviceCanBeDefaultDevice:
-        case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
-        case kAudioDevicePropertyLatency:
-        case kAudioDevicePropertySafetyOffset:
-        case kAudioStreamPropertyIsActive:
-        case kAudioStreamPropertyDirection:
-        case kAudioStreamPropertyTerminalType:
-        case kAudioStreamPropertyStartingChannel:
-        case kAudioStreamPropertyLatency:
-        case kAudioDevicePropertyIsHidden:
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioDevicePropertyNominalSampleRate:
-            *outDataSize = sizeof(Float64);
-            break;
-        case kAudioDevicePropertyAvailableNominalSampleRates:
-            *outDataSize = sizeof(AudioValueRange);
-            break;
-        case kAudioDevicePropertyStreams:
-            *outDataSize = sizeof(AudioObjectID);
-            break;
-        case kAudioObjectPropertyControlList:
-            *outDataSize = 0;
-            break;
-        case kAudioDevicePropertyRelatedDevices:
-            *outDataSize = sizeof(AudioObjectID);
-            break;
-        case kAudioDevicePropertyPreferredChannelsForStereo:
-            *outDataSize = 2 * sizeof(UInt32);
-            break;
-        case kAudioDevicePropertyPreferredChannelLayout:
-            *outDataSize = offsetof(AudioChannelLayout, mChannelDescriptions) +
-                            VB_CHANNEL_COUNT * sizeof(AudioChannelDescription);
-            break;
-        case kAudioStreamPropertyVirtualFormat:
-        case kAudioStreamPropertyPhysicalFormat:
-            *outDataSize = sizeof(AudioStreamBasicDescription);
-            break;
-        case kAudioStreamPropertyAvailableVirtualFormats:
-        case kAudioStreamPropertyAvailablePhysicalFormats:
-            *outDataSize = sizeof(AudioStreamRangedDescription);
-            break;
-        default:
-            return kAudioHardwareUnknownPropertyError;
+    /* Plugin-level (system object) properties */
+    if (inObjectID == kAudioObjectSystemObject) {
+        switch (inAddress->mSelector) {
+            case kAudioObjectPropertyName:
+            case kAudioObjectPropertyManufacturer:
+                *outDataSize = sizeof(CFStringRef);
+                return kAudioHardwareNoError;
+            case kAudioObjectPropertyClass:
+            case kAudioObjectPropertyBaseClass:
+                *outDataSize = sizeof(AudioClassID);
+                return kAudioHardwareNoError;
+            case kAudioObjectPropertyOwnedObjects:
+                *outDataSize = 2 * sizeof(AudioObjectID); /* device + stream */
+                return kAudioHardwareNoError;
+            case kAudioPlugInPropertyDeviceList:
+                *outDataSize = sizeof(AudioObjectID);   /* one device */
+                return kAudioHardwareNoError;
+            case kAudioPlugInPropertyBoxList:
+            case kAudioObjectPropertyControlList:
+                *outDataSize = 0;
+                return kAudioHardwareNoError;
+            case kAudioPlugInPropertyTranslateUIDToDevice:
+                *outDataSize = sizeof(AudioObjectID);
+                return kAudioHardwareNoError;
+            default:
+                return kAudioHardwareUnknownPropertyError;
+        }
     }
-    return kAudioHardwareNoError;
+
+    /* Device-level properties */
+    if (inObjectID == d->mDeviceObjectID) {
+        switch (inAddress->mSelector) {
+            case kAudioObjectPropertyName:
+            case kAudioObjectPropertyManufacturer:
+            case kAudioDevicePropertyDeviceUID:
+            case kAudioDevicePropertyModelUID:
+                *outDataSize = sizeof(CFStringRef);
+                break;
+            case kAudioObjectPropertyClass:
+            case kAudioObjectPropertyBaseClass:
+                *outDataSize = sizeof(AudioClassID);
+                break;
+            case kAudioObjectPropertyOwner:
+            case kAudioObjectPropertyOwnedObjects:
+            case kAudioDevicePropertyStreams:
+            case kAudioDevicePropertyRelatedDevices:
+                *outDataSize = sizeof(AudioObjectID);
+                break;
+            case kAudioDevicePropertyTransportType:
+            case kAudioDevicePropertyClockDomain:
+            case kAudioDevicePropertyDeviceIsAlive:
+            case kAudioDevicePropertyDeviceIsRunning:
+            case kAudioDevicePropertyDeviceCanBeDefaultDevice:
+            case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
+            case kAudioDevicePropertyLatency:
+            case kAudioDevicePropertySafetyOffset:
+            case kAudioDevicePropertyIsHidden:
+            case kAudioDevicePropertyZeroTimeStampPeriod:
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioDevicePropertyNominalSampleRate:
+                *outDataSize = sizeof(Float64);
+                break;
+            case kAudioDevicePropertyAvailableNominalSampleRates:
+                *outDataSize = sizeof(AudioValueRange);
+                break;
+            case kAudioObjectPropertyControlList:
+                *outDataSize = 0;
+                break;
+            case kAudioDevicePropertyPreferredChannelsForStereo:
+                *outDataSize = 2 * sizeof(UInt32);
+                break;
+            case kAudioDevicePropertyPreferredChannelLayout:
+                *outDataSize = offsetof(AudioChannelLayout, mChannelDescriptions) +
+                                VB_CHANNEL_COUNT * sizeof(AudioChannelDescription);
+                break;
+            default:
+                return kAudioHardwareUnknownPropertyError;
+        }
+        return kAudioHardwareNoError;
+    }
+
+    /* Stream-level properties */
+    if (inObjectID == d->mStreamInputObjectID) {
+        switch (inAddress->mSelector) {
+            case kAudioObjectPropertyClass:
+            case kAudioObjectPropertyBaseClass:
+                *outDataSize = sizeof(AudioClassID);
+                break;
+            case kAudioObjectPropertyName:
+                *outDataSize = sizeof(CFStringRef);
+                break;
+            case kAudioObjectPropertyOwner:
+                *outDataSize = sizeof(AudioObjectID);
+                break;
+            case kAudioStreamPropertyIsActive:
+            case kAudioStreamPropertyDirection:
+            case kAudioStreamPropertyTerminalType:
+            case kAudioStreamPropertyStartingChannel:
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioStreamPropertyVirtualFormat:
+            case kAudioStreamPropertyPhysicalFormat:
+                *outDataSize = sizeof(AudioStreamBasicDescription);
+                break;
+            case kAudioStreamPropertyAvailableVirtualFormats:
+            case kAudioStreamPropertyAvailablePhysicalFormats:
+                *outDataSize = sizeof(AudioStreamRangedDescription);
+                break;
+            default:
+                return kAudioHardwareUnknownPropertyError;
+        }
+        return kAudioHardwareNoError;
+    }
+
+    return kAudioHardwareUnknownPropertyError;
 }
 
 /* Helper: build the ASBD for our fixed format */
@@ -557,157 +660,243 @@ static OSStatus VBDriver_GetPropertyData(AudioServerPlugInDriverRef inDriver,
                                          UInt32 *outDataSize,
                                          void *outData)
 {
-    (void)inDriver; (void)inClientProcessID; (void)inQualifierDataSize; (void)inQualifierData;
-    (void)inObjectID;
+    (void)inClientProcessID; (void)inQualifierDataSize; (void)inQualifierData;
+    VBDriver *d = (VBDriver *)inDriver;
 
-    OSStatus err = kAudioHardwareNoError;
-    VBDriver *d  = (VBDriver *)inDriver;
-
-    switch (inAddress->mSelector) {
-        case kAudioObjectPropertyName:
-            *(CFStringRef *)outData = CFSTR("VoiceBridge Microphone");
-            CFRetain(*(CFStringRef *)outData);
-            *outDataSize = sizeof(CFStringRef);
-            break;
-        case kAudioObjectPropertyManufacturer:
-            *(CFStringRef *)outData = CFSTR("VoiceBridge");
-            CFRetain(*(CFStringRef *)outData);
-            *outDataSize = sizeof(CFStringRef);
-            break;
-        case kAudioDevicePropertyDeviceUID:
-            *(CFStringRef *)outData = CFStringCreateWithCString(NULL, VB_DEVICE_UID,
-                                                                kCFStringEncodingUTF8);
-            *outDataSize = sizeof(CFStringRef);
-            break;
-        case kAudioDevicePropertyModelUID:
-            *(CFStringRef *)outData = CFStringCreateWithCString(NULL, "VoiceBridgeMic-Model",
-                                                                kCFStringEncodingUTF8);
-            *outDataSize = sizeof(CFStringRef);
-            break;
-        case kAudioDevicePropertyTransportType:
-            *(UInt32 *)outData = kAudioDeviceTransportTypeVirtual;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioDevicePropertyClockDomain:
-            *(UInt32 *)outData = 0;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioDevicePropertyDeviceIsAlive:
-            *(UInt32 *)outData = 1;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioDevicePropertyDeviceIsRunning:
-            pthread_mutex_lock(&d->mMutex);
-            *(UInt32 *)outData = d->mIORunning ? 1 : 0;
-            pthread_mutex_unlock(&d->mMutex);
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioDevicePropertyDeviceCanBeDefaultDevice:
-            *(UInt32 *)outData = 1;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
-            *(UInt32 *)outData = 0;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioDevicePropertyLatency:
-            *(UInt32 *)outData = 0;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioDevicePropertySafetyOffset:
-            *(UInt32 *)outData = 0;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioDevicePropertyStreams: {
-            AudioObjectID *ids = (AudioObjectID *)outData;
-            *ids = d->mStreamInputObjectID;
-            *outDataSize = sizeof(AudioObjectID);
-            break;
+    /* ── Plugin / system-object level ───────────────────────────────────── */
+    if (inObjectID == kAudioObjectSystemObject) {
+        switch (inAddress->mSelector) {
+            case kAudioObjectPropertyName:
+                *(CFStringRef *)outData = CFSTR("VoiceBridge");
+                CFRetain(*(CFStringRef *)outData);
+                *outDataSize = sizeof(CFStringRef);
+                return kAudioHardwareNoError;
+            case kAudioObjectPropertyManufacturer:
+                *(CFStringRef *)outData = CFSTR("VoiceBridge");
+                CFRetain(*(CFStringRef *)outData);
+                *outDataSize = sizeof(CFStringRef);
+                return kAudioHardwareNoError;
+            case kAudioObjectPropertyClass:
+                *(AudioClassID *)outData = kAudioPlugInClassID;
+                *outDataSize = sizeof(AudioClassID);
+                return kAudioHardwareNoError;
+            case kAudioObjectPropertyBaseClass:
+                *(AudioClassID *)outData = kAudioObjectClassID;
+                *outDataSize = sizeof(AudioClassID);
+                return kAudioHardwareNoError;
+            case kAudioObjectPropertyOwnedObjects: {
+                AudioObjectID *ids = (AudioObjectID *)outData;
+                ids[0] = d->mDeviceObjectID;
+                ids[1] = d->mStreamInputObjectID;
+                *outDataSize = 2 * sizeof(AudioObjectID);
+                return kAudioHardwareNoError;
+            }
+            case kAudioPlugInPropertyDeviceList:
+                *(AudioObjectID *)outData = d->mDeviceObjectID;
+                *outDataSize = sizeof(AudioObjectID);
+                return kAudioHardwareNoError;
+            case kAudioPlugInPropertyBoxList:
+            case kAudioObjectPropertyControlList:
+                *outDataSize = 0;
+                return kAudioHardwareNoError;
+            case kAudioPlugInPropertyTranslateUIDToDevice:
+                *(AudioObjectID *)outData = d->mDeviceObjectID;
+                *outDataSize = sizeof(AudioObjectID);
+                return kAudioHardwareNoError;
+            default:
+                return kAudioHardwareUnknownPropertyError;
         }
-        case kAudioObjectPropertyControlList:
-            *outDataSize = 0;
-            break;
-        case kAudioDevicePropertyRelatedDevices:
-            *(AudioObjectID *)outData = d->mDeviceObjectID;
-            *outDataSize = sizeof(AudioObjectID);
-            break;
-        case kAudioDevicePropertyNominalSampleRate:
-            *(Float64 *)outData = VB_SAMPLE_RATE;
-            *outDataSize = sizeof(Float64);
-            break;
-        case kAudioDevicePropertyAvailableNominalSampleRates: {
-            AudioValueRange *r = (AudioValueRange *)outData;
-            r->mMinimum = VB_SAMPLE_RATE;
-            r->mMaximum = VB_SAMPLE_RATE;
-            *outDataSize = sizeof(AudioValueRange);
-            break;
-        }
-        case kAudioDevicePropertyIsHidden:
-            *(UInt32 *)outData = 0;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioDevicePropertyPreferredChannelsForStereo: {
-            UInt32 *ch = (UInt32 *)outData;
-            ch[0] = 1; ch[1] = 1;
-            *outDataSize = 2 * sizeof(UInt32);
-            break;
-        }
-        case kAudioDevicePropertyPreferredChannelLayout: {
-            UInt32 sz = offsetof(AudioChannelLayout, mChannelDescriptions) +
-                        VB_CHANNEL_COUNT * sizeof(AudioChannelDescription);
-            AudioChannelLayout *layout = (AudioChannelLayout *)outData;
-            layout->mChannelLayoutTag = kAudioChannelLayoutTag_Mono;
-            layout->mChannelBitmap    = 0;
-            layout->mNumberChannelDescriptions = 1;
-            layout->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Mono;
-            layout->mChannelDescriptions[0].mChannelFlags = 0;
-            layout->mChannelDescriptions[0].mCoordinates[0] = 0.0f;
-            layout->mChannelDescriptions[0].mCoordinates[1] = 0.0f;
-            layout->mChannelDescriptions[0].mCoordinates[2] = 0.0f;
-            *outDataSize = sz;
-            break;
-        }
-        case kAudioStreamPropertyIsActive:
-            *(UInt32 *)outData = 1;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioStreamPropertyDirection:
-            *(UInt32 *)outData = 1;  /* 1 = input */
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioStreamPropertyTerminalType:
-            *(UInt32 *)outData = kAudioStreamTerminalTypeMicrophone;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioStreamPropertyStartingChannel:
-            *(UInt32 *)outData = 1;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioStreamPropertyLatency:
-            *(UInt32 *)outData = 0;
-            *outDataSize = sizeof(UInt32);
-            break;
-        case kAudioStreamPropertyVirtualFormat:
-        case kAudioStreamPropertyPhysicalFormat: {
-            AudioStreamBasicDescription asbd = VBMakeASBD();
-            *(AudioStreamBasicDescription *)outData = asbd;
-            *outDataSize = sizeof(AudioStreamBasicDescription);
-            break;
-        }
-        case kAudioStreamPropertyAvailableVirtualFormats:
-        case kAudioStreamPropertyAvailablePhysicalFormats: {
-            AudioStreamRangedDescription *rd = (AudioStreamRangedDescription *)outData;
-            rd->mFormat = VBMakeASBD();
-            rd->mSampleRateRange.mMinimum = VB_SAMPLE_RATE;
-            rd->mSampleRateRange.mMaximum = VB_SAMPLE_RATE;
-            *outDataSize = sizeof(AudioStreamRangedDescription);
-            break;
-        }
-        default:
-            err = kAudioHardwareUnknownPropertyError;
-            break;
     }
-    return err;
+
+    /* ── Device level ────────────────────────────────────────────────────── */
+    if (inObjectID == d->mDeviceObjectID) {
+        switch (inAddress->mSelector) {
+            case kAudioObjectPropertyClass:
+                *(AudioClassID *)outData = kAudioDeviceClassID;
+                *outDataSize = sizeof(AudioClassID);
+                break;
+            case kAudioObjectPropertyBaseClass:
+                *(AudioClassID *)outData = kAudioObjectClassID;
+                *outDataSize = sizeof(AudioClassID);
+                break;
+            case kAudioObjectPropertyOwner:
+                *(AudioObjectID *)outData = kAudioObjectSystemObject;
+                *outDataSize = sizeof(AudioObjectID);
+                break;
+            case kAudioObjectPropertyOwnedObjects:
+                *(AudioObjectID *)outData = d->mStreamInputObjectID;
+                *outDataSize = sizeof(AudioObjectID);
+                break;
+            case kAudioObjectPropertyName:
+                *(CFStringRef *)outData = CFSTR("VoiceBridge Microphone");
+                CFRetain(*(CFStringRef *)outData);
+                *outDataSize = sizeof(CFStringRef);
+                break;
+            case kAudioObjectPropertyManufacturer:
+                *(CFStringRef *)outData = CFSTR("VoiceBridge");
+                CFRetain(*(CFStringRef *)outData);
+                *outDataSize = sizeof(CFStringRef);
+                break;
+            case kAudioDevicePropertyDeviceUID:
+                *(CFStringRef *)outData = CFStringCreateWithCString(NULL, VB_DEVICE_UID,
+                                                                    kCFStringEncodingUTF8);
+                *outDataSize = sizeof(CFStringRef);
+                break;
+            case kAudioDevicePropertyModelUID:
+                *(CFStringRef *)outData = CFStringCreateWithCString(NULL, "VoiceBridgeMic-Model",
+                                                                    kCFStringEncodingUTF8);
+                *outDataSize = sizeof(CFStringRef);
+                break;
+            case kAudioDevicePropertyTransportType:
+                *(UInt32 *)outData = kAudioDeviceTransportTypeVirtual;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioDevicePropertyClockDomain:
+                *(UInt32 *)outData = 0;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioDevicePropertyDeviceIsAlive:
+                *(UInt32 *)outData = 1;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioDevicePropertyDeviceIsRunning:
+                pthread_mutex_lock(&d->mMutex);
+                *(UInt32 *)outData = d->mIORunning ? 1 : 0;
+                pthread_mutex_unlock(&d->mMutex);
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioDevicePropertyDeviceCanBeDefaultDevice:
+                *(UInt32 *)outData = 1;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
+                *(UInt32 *)outData = 0;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioDevicePropertyLatency:
+                *(UInt32 *)outData = 0;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioDevicePropertySafetyOffset:
+                *(UInt32 *)outData = 0;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioDevicePropertyStreams:
+                *(AudioObjectID *)outData = d->mStreamInputObjectID;
+                *outDataSize = sizeof(AudioObjectID);
+                break;
+            case kAudioObjectPropertyControlList:
+                *outDataSize = 0;
+                break;
+            case kAudioDevicePropertyRelatedDevices:
+                *(AudioObjectID *)outData = d->mDeviceObjectID;
+                *outDataSize = sizeof(AudioObjectID);
+                break;
+            case kAudioDevicePropertyNominalSampleRate:
+                *(Float64 *)outData = VB_SAMPLE_RATE;
+                *outDataSize = sizeof(Float64);
+                break;
+            case kAudioDevicePropertyAvailableNominalSampleRates: {
+                AudioValueRange *r = (AudioValueRange *)outData;
+                r->mMinimum = VB_SAMPLE_RATE;
+                r->mMaximum = VB_SAMPLE_RATE;
+                *outDataSize = sizeof(AudioValueRange);
+                break;
+            }
+            case kAudioDevicePropertyIsHidden:
+                *(UInt32 *)outData = 0;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioDevicePropertyZeroTimeStampPeriod:
+                *(UInt32 *)outData = VB_ZERO_TS_PERIOD;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioDevicePropertyPreferredChannelsForStereo: {
+                UInt32 *ch = (UInt32 *)outData;
+                ch[0] = 1; ch[1] = 1;
+                *outDataSize = 2 * sizeof(UInt32);
+                break;
+            }
+            case kAudioDevicePropertyPreferredChannelLayout: {
+                UInt32 sz = offsetof(AudioChannelLayout, mChannelDescriptions) +
+                            VB_CHANNEL_COUNT * sizeof(AudioChannelDescription);
+                AudioChannelLayout *layout = (AudioChannelLayout *)outData;
+                layout->mChannelLayoutTag = kAudioChannelLayoutTag_Mono;
+                layout->mChannelBitmap    = 0;
+                layout->mNumberChannelDescriptions = 1;
+                layout->mChannelDescriptions[0].mChannelLabel = kAudioChannelLabel_Mono;
+                layout->mChannelDescriptions[0].mChannelFlags = 0;
+                layout->mChannelDescriptions[0].mCoordinates[0] = 0.0f;
+                layout->mChannelDescriptions[0].mCoordinates[1] = 0.0f;
+                layout->mChannelDescriptions[0].mCoordinates[2] = 0.0f;
+                *outDataSize = sz;
+                break;
+            }
+            default:
+                return kAudioHardwareUnknownPropertyError;
+        }
+        return kAudioHardwareNoError;
+    }
+
+    /* ── Stream level ────────────────────────────────────────────────────── */
+    if (inObjectID == d->mStreamInputObjectID) {
+        switch (inAddress->mSelector) {
+            case kAudioObjectPropertyClass:
+                *(AudioClassID *)outData = kAudioStreamClassID;
+                *outDataSize = sizeof(AudioClassID);
+                break;
+            case kAudioObjectPropertyBaseClass:
+                *(AudioClassID *)outData = kAudioObjectClassID;
+                *outDataSize = sizeof(AudioClassID);
+                break;
+            case kAudioObjectPropertyOwner:
+                *(AudioObjectID *)outData = d->mDeviceObjectID;
+                *outDataSize = sizeof(AudioObjectID);
+                break;
+            case kAudioObjectPropertyName:
+                *(CFStringRef *)outData = CFSTR("VoiceBridge Input");
+                CFRetain(*(CFStringRef *)outData);
+                *outDataSize = sizeof(CFStringRef);
+                break;
+            case kAudioStreamPropertyIsActive:
+                *(UInt32 *)outData = 1;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioStreamPropertyDirection:
+                *(UInt32 *)outData = 1;   /* 1 = input */
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioStreamPropertyTerminalType:
+                *(UInt32 *)outData = kAudioStreamTerminalTypeMicrophone;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioStreamPropertyStartingChannel:
+                *(UInt32 *)outData = 1;
+                *outDataSize = sizeof(UInt32);
+                break;
+            case kAudioStreamPropertyVirtualFormat:
+            case kAudioStreamPropertyPhysicalFormat: {
+                AudioStreamBasicDescription asbd = VBMakeASBD();
+                *(AudioStreamBasicDescription *)outData = asbd;
+                *outDataSize = sizeof(AudioStreamBasicDescription);
+                break;
+            }
+            case kAudioStreamPropertyAvailableVirtualFormats:
+            case kAudioStreamPropertyAvailablePhysicalFormats: {
+                AudioStreamRangedDescription *rd = (AudioStreamRangedDescription *)outData;
+                rd->mFormat = VBMakeASBD();
+                rd->mSampleRateRange.mMinimum = VB_SAMPLE_RATE;
+                rd->mSampleRateRange.mMaximum = VB_SAMPLE_RATE;
+                *outDataSize = sizeof(AudioStreamRangedDescription);
+                break;
+            }
+            default:
+                return kAudioHardwareUnknownPropertyError;
+        }
+        return kAudioHardwareNoError;
+    }
+
+    return kAudioHardwareUnknownPropertyError;
 }
 
 static OSStatus VBDriver_SetPropertyData(AudioServerPlugInDriverRef inDriver,
@@ -759,25 +948,33 @@ static OSStatus VBDriver_GetZeroTimeStamp(AudioServerPlugInDriverRef inDriver,
                                           AudioObjectID inDeviceObjectID,
                                           UInt32 inClientID,
                                           Float64 *outSampleTime,
-                                          UInt64 *outHostTime)
+                                          UInt64 *outHostTime,
+                                          UInt64 *outSeed)
 {
     (void)inDeviceObjectID; (void)inClientID;
     VBDriver *d = (VBDriver *)inDriver;
     pthread_mutex_lock(&d->mMutex);
 
     uint64_t now = mach_absolute_time();
-    uint64_t elapsedTicks = now - d->mSavedHostTime;
-    double   elapsedFrames = (double)elapsedTicks * d->mHostTicksPerFrame;
-    uint64_t cycleFrames   = VB_FRAMES;
+    double   ticksPerPeriod = d->mHostTicksPerFrame * (double)VB_ZERO_TS_PERIOD;
 
-    while (elapsedFrames >= (double)cycleFrames) {
-        d->mSavedSampleTime += cycleFrames;
-        d->mSavedHostTime   += (uint64_t)((double)cycleFrames / d->mHostTicksPerFrame);
-        elapsedFrames       -= (double)cycleFrames;
+    /* Advance anchor forward until it's within one period of now.
+       Cap iterations to avoid any possibility of spinning. */
+    if (d->mSavedHostTime == 0) {
+        /* First call after StartIO — initialise anchor to now */
+        d->mSavedHostTime   = now;
+        d->mSavedSampleTime = 0;
+    } else {
+        uint32_t guard = 0;
+        while (d->mSavedHostTime + (uint64_t)ticksPerPeriod <= now && ++guard < 1000) {
+            d->mSavedHostTime   += (uint64_t)ticksPerPeriod;
+            d->mSavedSampleTime += VB_ZERO_TS_PERIOD;
+        }
     }
 
     *outSampleTime = (Float64)d->mSavedSampleTime;
     *outHostTime   = d->mSavedHostTime;
+    if (outSeed) *outSeed = 1;
     pthread_mutex_unlock(&d->mMutex);
     return kAudioHardwareNoError;
 }
@@ -845,8 +1042,8 @@ static OSStatus VBDriver_DoIOOperation(AudioServerPlugInDriverRef inDriver,
         return kAudioHardwareNoError;
     }
 
-    uint32_t wp = atomic_load_explicit(&d->mRing->writePos, memory_order_acquire);
-    uint32_t rp = atomic_load_explicit(&d->mRing->readPos,  memory_order_relaxed);
+    uint32_t wp = atomic_load_explicit((_Atomic uint32_t *)&d->mRing->writePos, memory_order_acquire);
+    uint32_t rp = atomic_load_explicit((_Atomic uint32_t *)&d->mRing->readPos,  memory_order_relaxed);
     uint32_t avail = (wp - rp);   /* unsigned subtraction wraps correctly */
 
     if (avail >= bytesNeeded) {
@@ -859,10 +1056,52 @@ static OSStatus VBDriver_DoIOOperation(AudioServerPlugInDriverRef inDriver,
             memcpy(dst, d->mRing->buf + ri, tail);
             memcpy((uint8_t *)dst + tail, d->mRing->buf, bytesNeeded - tail);
         }
-        atomic_store_explicit(&d->mRing->readPos, rp + bytesNeeded, memory_order_release);
+        atomic_store_explicit((_Atomic uint32_t *)&d->mRing->readPos, rp + bytesNeeded, memory_order_release);
+        /* track last sample for crossfade */
+        uint32_t lastFrame = (bytesNeeded / VB_BYTES_PER_FRAME) - 1;
+        d->mLastSampleL = dst[lastFrame * 2];
+        d->mLastSampleR = dst[lastFrame * 2 + 1];
+    } else if (avail > 0) {
+        /* partial read + 5ms crossfade to silence */
+        uint32_t ri   = rp % VB_BUF_BYTES;
+        uint32_t tail = VB_BUF_BYTES - ri;
+        if (tail >= avail) {
+            memcpy(dst, d->mRing->buf + ri, avail);
+        } else {
+            memcpy(dst, d->mRing->buf + ri, tail);
+            memcpy((uint8_t *)dst + tail, d->mRing->buf, avail - tail);
+        }
+        atomic_store_explicit((_Atomic uint32_t *)&d->mRing->readPos, rp + avail, memory_order_release);
+        uint32_t framesRead = avail / VB_BYTES_PER_FRAME;
+        uint32_t framesTotal = bytesNeeded / VB_BYTES_PER_FRAME;
+        uint32_t fadeFrames = framesTotal > framesRead
+            ? (framesTotal - framesRead > 240 ? 240u : framesTotal - framesRead)
+            : 0u;
+        float startL = framesRead > 0 ? dst[(framesRead - 1) * 2] : d->mLastSampleL;
+        float startR = framesRead > 0 ? dst[(framesRead - 1) * 2 + 1] : d->mLastSampleR;
+        for (uint32_t f = 0; f < fadeFrames; ++f) {
+            float t = 1.0f - ((float)(f + 1) / (float)(fadeFrames + 1));
+            uint32_t idx = framesRead + f;
+            dst[idx * 2]     = startL * t;
+            dst[idx * 2 + 1] = startR * t;
+        }
+        for (uint32_t f = framesRead + fadeFrames; f < framesTotal; ++f) {
+            dst[f * 2] = dst[f * 2 + 1] = 0.0f;
+        }
+        d->mLastSampleL = d->mLastSampleR = 0.0f;
     } else {
-        /* underrun — fill silence */
-        memset(dst, 0, bytesNeeded);
+        /* underrun — 5ms crossfade from last sample to silence */
+        uint32_t framesTotal = bytesNeeded / VB_BYTES_PER_FRAME;
+        uint32_t fadeFrames = framesTotal > 240 ? 240u : framesTotal;
+        for (uint32_t f = 0; f < fadeFrames; ++f) {
+            float t = 1.0f - ((float)(f + 1) / (float)(fadeFrames + 1));
+            dst[f * 2]     = d->mLastSampleL * t;
+            dst[f * 2 + 1] = d->mLastSampleR * t;
+        }
+        for (uint32_t f = fadeFrames; f < framesTotal; ++f) {
+            dst[f * 2] = dst[f * 2 + 1] = 0.0f;
+        }
+        d->mLastSampleL = d->mLastSampleR = 0.0f;
     }
 
     return kAudioHardwareNoError;

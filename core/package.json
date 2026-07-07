@@ -4,13 +4,15 @@
   "description": "VoiceBridge C++ audio pipeline native addon",
   "main": "index.js",
   "scripts": {
+    "install": "node -e \"process.exit(0)\"",
     "build":   "node-gyp configure build",
-    "rebuild": "node-gyp rebuild",
-    "install": "node-gyp rebuild"
+    "rebuild": "node-gyp rebuild"
   },
   "dependencies": {
     "node-addon-api": "^8.0.0"
   },
-  "gypfile": true,
+  "devDependencies": {
+    "node-gyp": "^10.2.0"
+  },
   "private": true
 }

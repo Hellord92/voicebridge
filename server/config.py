@@ -13,6 +13,14 @@ class Settings(BaseSettings):
     elevenlabs_api_key:  str = Field('', alias='ELEVENLABS_API_KEY')
     elevenlabs_voice_id: str = Field('21m00Tcm4TlvDq8ikWAM', alias='ELEVENLABS_VOICE_ID')
     groq_api_key:        str = Field('', alias='GROQ_API_KEY')
+    groq_translate_model: str = Field('llama-3.1-8b-instant', alias='GROQ_TRANSLATE_MODEL')
+    groq_stt_model:      str = Field('whisper-large-v3-turbo', alias='GROQ_STT_MODEL')
+
+    # Premium tier (paid plans) — trial uses Groq only
+    openai_api_key:       str = Field('', alias='OPENAI_API_KEY')
+    openai_whisper_model: str = Field('whisper-1', alias='OPENAI_WHISPER_MODEL')
+    gemini_api_key:       str = Field('', alias='GEMINI_API_KEY')
+    gemini_translate_model: str = Field('gemini-2.0-flash', alias='GEMINI_TRANSLATE_MODEL')
 
     # Payments
     nowpayments_api_key:    str = Field('', alias='NOWPAYMENTS_API_KEY')
@@ -37,6 +45,13 @@ class Settings(BaseSettings):
 
     # Firebase service account JSON (single-line JSON string)
     firebase_service_account_json: str = Field('', alias='FIREBASE_SERVICE_ACCOUNT_JSON')
+
+    resend_api_key: str = Field('', alias='RESEND_API_KEY')
+    email_from:     str = Field('VoiceBridge <noreply@voicebridgeapps.com>', alias='EMAIL_FROM')
+
+    # Local dev only — never enable in production
+    dev_unlimited_trial:     bool = Field(False, alias='DEV_UNLIMITED_TRIAL')
+    dev_skip_license_verify: bool = Field(False, alias='DEV_SKIP_LICENSE_VERIFY')
 
     def get_cors_origins(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(',') if o.strip()]

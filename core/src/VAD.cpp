@@ -44,8 +44,13 @@ int vb_vad_process(VBVAD *vad, const float *samples, uint32_t frameSamples)
 
 void vb_resample_48to16(const float *in, float *out, uint32_t inFrames)
 {
-    /* Simple 3:1 decimation — for production use a proper FIR filter */
+    /* 3:1 decimation with simple 3-tap averaging for better VAD accuracy */
     uint32_t outFrames = inFrames / 3;
-    for (uint32_t i = 0; i < outFrames; i++)
-        out[i] = in[i * 3];
+    for (uint32_t i = 0; i < outFrames; i++) {
+        uint32_t base = i * 3;
+        float s = in[base];
+        if (base + 1 < inFrames) s += in[base + 1];
+        if (base + 2 < inFrames) s += in[base + 2];
+        out[i] = s / 3.0f;
+    }
 }

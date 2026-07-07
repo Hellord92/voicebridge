@@ -75,18 +75,37 @@ void vb_capture_destroy(VBAudioCapture *cap)
     Pa_Terminate();
 }
 
-int vb_capture_list_devices(char outNames[][128], int maxCount)
+static int enumerate_input_devices(VBDeviceInfo outDevices[], int maxCount)
 {
-    Pa_Initialize();
     int total = Pa_GetDeviceCount();
     int count = 0;
     for (int i = 0; i < total && count < maxCount; i++) {
         const PaDeviceInfo *info = Pa_GetDeviceInfo(i);
         if (info && info->maxInputChannels > 0) {
-            strncpy(outNames[count], info->name, 127);
-            outNames[count][127] = '\0';
+            outDevices[count].paIndex = i;   /* real PortAudio index */
+            strncpy(outDevices[count].name, info->name, 127);
+            outDevices[count].name[127] = '\0';
             count++;
         }
     }
+    return count;
+}
+
+int vb_capture_list_devices(VBDeviceInfo outDevices[], int maxCount)
+{
+    Pa_Initialize();
+    int count = enumerate_input_devices(outDevices, maxCount);
+    Pa_Terminate();
+    return count;
+}
+
+int vb_capture_refresh_devices(VBDeviceInfo outDevices[], int maxCount)
+{
+    /* Drive refcount to zero then reinit so PortAudio rescans hardware */
+    Pa_Terminate();
+    PaError err = Pa_Initialize();
+    if (err != paNoError) return -1;
+    int count = enumerate_input_devices(outDevices, maxCount);
+    Pa_Terminate();
     return count;
 }

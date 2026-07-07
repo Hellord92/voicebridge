@@ -45,7 +45,11 @@ void PhraseDetector::push(const float *frames, uint32_t count)
                 mSilenceCounter = 0;
             } else if (mInSpeech) {
                 mSilenceCounter += chunk;
-                if (mSilenceCounter >= mConfig.silenceFrames) {
+                /* Adaptive: shorter phrases get shorter silence threshold */
+                uint32_t threshold = mConfig.silenceFrames;
+                if (mBuffer.size() < mConfig.minPhraseFrames * 3)
+                    threshold = mConfig.silenceFrames / 2; /* 75ms for short utterances */
+                if (mSilenceCounter >= threshold) {
                     flushPhrase();
                 }
             }

@@ -27,34 +27,39 @@ from datetime import datetime, timezone
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, JSONResponse
+from fastapi.responses import Response, JSONResponse, StreamingResponse
 from pydantic import BaseModel, EmailStr
-from slowapi import Limiter
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
+from database import normalize_database_url
 from config  import settings
 from models  import Base, License, Order, UsageEvent
-from pricing import PLANS, get_plan
-from services.license       import validate_license, create_license, activate_license, consume_minutes
+from pricing import PLANS, get_plan, FREE_TRIAL_SECONDS
+from services.license       import (
+    validate_license, create_license, activate_license, consume_minutes,
+    pick_best_license, stack_minutes_on_license, deactivate_free_licenses,
+    log_pipeline_usage, free_trial_seconds_used,
+)
 from services.tts_proxy     import synthesize
-from services.stt           import transcribe
-from services.translate     import translate
-from services.optimizations import synthesize_streaming, translation_cache, cache_key
+from services.pipeline_ai   import run_tiered_stt_translate, ai_response_headers, ai_tier_label
+from services.optimizations import synthesize_streaming
 from services.payments      import (
     create_crypto_payment, verify_nowpayments_signature,
     get_iban_details, generate_transfer_reference, CRYPTO_CURRENCIES,
 )
 from services.auth          import verify_firebase_token, is_firebase_token
-from languages import get_whisper_lang
+from services.glossary      import apply_glossary
 from voices import get_voice_id, list_voices
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 log = logging.getLogger('voicebridge.server')
 
 # ── DB ───────────────────────────────────────────────────────────────────────
-engine = create_async_engine(settings.database_url, echo=False)
+engine = create_async_engine(normalize_database_url(settings.database_url), echo=False)
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
 
@@ -79,6 +84,7 @@ async def lifespan(app: FastAPI):
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title='VoiceBridge API', version='2.0.0', lifespan=lifespan)
 app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -116,35 +122,45 @@ async def require_license(request: Request, db: AsyncSession = Depends(get_db)) 
     return result
 
 
+def resolve_license_key(_license: dict, request: Request) -> str:
+    """Actual VB key for usage logging (Firebase JWT is not a license key)."""
+    if _license.get('license_key'):
+        return _license['license_key']
+    token = request.headers.get('Authorization', '')[7:].strip()
+    if is_firebase_token(token):
+        raise HTTPException(401, 'License key not resolved for account')
+    return token
+
+
 async def validate_license_by_uid(db: AsyncSession, uid: str) -> dict:
-    """Validate a license by Firebase UID."""
-    from models   import License
-    from pricing  import get_plan
-    stmt  = select(License).where(License.firebase_uid == uid, License.active == True)
-    lic   = (await db.execute(stmt)).scalar_one_or_none()
+    """Validate best active license for Firebase UID."""
+    from pricing import get_plan, FREE_TRIAL_SECONDS
+    stmt = select(License).where(License.firebase_uid == uid).order_by(License.activated_at.desc())
+    lics = (await db.execute(stmt)).scalars().all()
+    lic  = pick_best_license(list(lics))
     if lic is None:
         return {'valid': False, 'reason': 'no_active_license'}
-    plan = get_plan(lic.plan_id)
-    minutes_left = lic.minutes_total - lic.minutes_used
-    if minutes_left <= 0 and lic.plan_id != 'free':
-        return {'valid': False, 'reason': 'minutes_exhausted', 'minutes_used': lic.minutes_used}
-    return {
-        'valid':         True,
-        'plan_id':       lic.plan_id,
-        'plan_name':     plan['name'] if plan else lic.plan_id,
-        'minutes_total': lic.minutes_total,
-        'minutes_used':  lic.minutes_used,
-        'minutes_left':  minutes_left if lic.plan_id != 'free' else None,
-        'free_trial':    lic.plan_id == 'free',
-        'license_key':   lic.key,
-    }
+    return await validate_license(db, lic.key)
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get('/health')
-async def health():
-    return {'status': 'ok', 'time': datetime.now(timezone.utc).isoformat()}
+async def health(db: AsyncSession = Depends(get_db)):
+    db_ok = True
+    try:
+        await db.execute(select(License).limit(1))
+    except Exception:
+        db_ok = False
+    return {
+        'status': 'ok' if db_ok else 'degraded',
+        'db':     db_ok,
+        'groq':   bool(settings.groq_api_key),
+        'openai': bool(settings.openai_api_key),
+        'gemini': bool(settings.gemini_api_key),
+        'eleven': bool(settings.elevenlabs_api_key),
+        'time':   datetime.now(timezone.utc).isoformat(),
+    }
 
 
 # ── Auth: Firebase → account info ─────────────────────────────────────────────
@@ -187,10 +203,14 @@ async def auth_me(request: Request, db: AsyncSession = Depends(get_db)):
         await db.commit()
         lics = [lic]
 
-    # Return the active/most recent license
-    active_lic = next((l for l in lics if l.active), lics[0])
+    # Return best license (paid preferred over free)
+    active_lic = pick_best_license(list(lics))
     plan = get_plan(active_lic.plan_id)
     minutes_left = active_lic.minutes_total - active_lic.minutes_used
+    trial_left = None
+    if active_lic.plan_id == 'free':
+        used = await free_trial_seconds_used(db, active_lic.key)
+        trial_left = max(0, FREE_TRIAL_SECONDS - used)
 
     return {
         'uid':           uid,
@@ -202,7 +222,8 @@ async def auth_me(request: Request, db: AsyncSession = Depends(get_db)):
             'plan_name':     plan['name'] if plan else active_lic.plan_id,
             'minutes_total': active_lic.minutes_total,
             'minutes_used':  active_lic.minutes_used,
-            'minutes_left':  minutes_left if active_lic.plan_id != 'free' else None,
+            'minutes_left':  minutes_left if active_lic.plan_id != 'free' else (trial_left // 60 if trial_left else 0),
+            'trial_seconds_left': trial_left,
             'free_trial':    active_lic.plan_id == 'free',
             'active':        active_lic.active,
         },
@@ -215,6 +236,7 @@ async def auth_me(request: Request, db: AsyncSession = Depends(get_db)):
             }
             for l in lics
         ],
+        'referral_code': f'VBREF-{uid[:8].upper()}',
     }
 
 
@@ -251,37 +273,150 @@ async def pipeline(
     db:       AsyncSession = Depends(get_db),
     _license: dict = Depends(require_license),
 ):
+    started_at  = datetime.now(timezone.utc)
     form        = await request.form()
     audio_bytes = await form['audio'].read()
-    source_lang = form.get('source_lang', 'auto')
-    target_lang = form.get('target_lang', 'en')
-    voice_gender = str(form.get('voice_gender', 'female') or 'female')
-    license_key = request.headers['Authorization'][7:]
-    started_at  = datetime.now(timezone.utc)
+    source_lang = str(form.get('source_lang', 'auto') or 'auto').strip()
+    target_lang = str(form.get('target_lang', 'en') or 'en').strip()
+    voice_gender = str(form.get('voice_gender', 'female') or 'female').strip()
+    glossary_raw = str(form.get('glossary', '') or '')
+    license_key = resolve_license_key(_license, request)
+    free_trial = bool(_license.get('free_trial'))
 
-    whisper_lang = get_whisper_lang(source_lang)
-    transcript   = await transcribe(audio_bytes, whisper_lang or 'auto')
-    if not transcript:
-        return JSONResponse({'transcript': '', 'translation': '', 'audio_b64': ''})
-
-    ck = cache_key(transcript, source_lang, target_lang)
-    translation = translation_cache.get(ck)
-    if not translation:
-        translation = await translate(transcript, source_lang, target_lang)
-        translation_cache.put(ck, translation)
-
-    mp3_bytes = await synthesize_streaming(
-        translation, target_lang, voice_id=get_voice_id(voice_gender),
+    transcript, translation, ai_stack = await run_tiered_stt_translate(
+        audio_bytes, source_lang, target_lang, free_trial=free_trial,
     )
-    audio_b64 = base64.b64encode(mp3_bytes).decode('ascii')
+    translation = apply_glossary(translation, glossary_raw)
+    if not transcript:
+        return JSONResponse({'transcript': '', 'translation': '', 'audio_b64': '', 'ai_tier': ai_stack.get('tier')})
 
-    # Consume minutes (non-free licenses)
+    audio_b64 = ''
+    tts_error = None
+    try:
+        mp3_bytes = await synthesize_streaming(
+            translation, target_lang, voice_id=get_voice_id(voice_gender),
+        )
+        audio_b64 = base64.b64encode(mp3_bytes).decode('ascii')
+    except Exception as e:
+        tts_error = 'elevenlabs_failed'
+        log.warning('TTS failed (STT/translate OK): %s', e)
+
     elapsed_s = int((datetime.now(timezone.utc) - started_at).total_seconds()) + 5
-    if not _license.get('free_trial'):
-        await consume_minutes(db, license_key, elapsed_s)
+    processing_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
 
-    log.info(f'Pipeline [{source_lang}→{target_lang}]: {transcript[:40]!r}')
-    return {'transcript': transcript, 'translation': translation, 'audio_b64': audio_b64}
+    if free_trial:
+        await log_pipeline_usage(db, license_key, elapsed_s)
+    else:
+        ok = await consume_minutes(db, license_key, elapsed_s)
+        if not ok:
+            raise HTTPException(402, 'minutes_exhausted')
+
+    log.info(
+        f'Pipeline [{source_lang}→{target_lang}] tier={ai_stack.get("tier")} '
+        f'stt={ai_stack.get("stt")} tr={ai_stack.get("translate")} {processing_ms}ms: {transcript[:40]!r}'
+    )
+    return JSONResponse(
+        {
+            'transcript': transcript,
+            'translation': translation,
+            'audio_b64': audio_b64,
+            'ai_tier': ai_stack.get('tier'),
+            'ai_stt': ai_stack.get('stt'),
+            'ai_translate': ai_stack.get('translate'),
+            'tts_error': tts_error,
+        },
+        headers=ai_response_headers(ai_stack, processing_ms),
+    )
+
+
+@app.post('/api/pipeline/stream')
+@limiter.limit('100/minute')
+async def pipeline_stream(
+    request:  Request,
+    db:       AsyncSession = Depends(get_db),
+    _license: dict = Depends(require_license),
+):
+    """SSE stream: emits transcript + translation events, then audio_b64."""
+    import json as json_mod
+    started_at = datetime.now(timezone.utc)
+    form       = await request.form()
+    audio_bytes = await form['audio'].read()
+    source_lang = str(form.get('source_lang', 'auto') or 'auto').strip()
+    target_lang = str(form.get('target_lang', 'en') or 'en').strip()
+    voice_gender = str(form.get('voice_gender', 'female') or 'female').strip()
+    glossary_raw = str(form.get('glossary', '') or '')
+    license_key = resolve_license_key(_license, request)
+    free_trial = bool(_license.get('free_trial'))
+
+    async def generate():
+        # ── 1. STT ────────────────────────────────────────────────────────────
+        from services.optimizations import translation_cache, cache_key
+        from languages import get_whisper_lang
+
+        whisper_lang = get_whisper_lang(source_lang)
+        stt_lang = whisper_lang or source_lang or 'auto'
+
+        from services.pipeline_ai import transcribe_tiered, translate_tiered, ai_stack_for_tier
+        transcript, stt_provider = await transcribe_tiered(audio_bytes, stt_lang, free_trial=free_trial)
+        stack = ai_stack_for_tier(free_trial)
+        stack['stt'] = stt_provider
+
+        translation_applied = apply_glossary(transcript, glossary_raw) if transcript else ''
+        yield f'data: {json_mod.dumps({"type": "transcript", "text": transcript, "ai_tier": stack.get("tier")})}\n\n'
+
+        if not transcript:
+            yield f'data: {json_mod.dumps({"type": "done"})}\n\n'
+            return
+
+        # ── 2. TR + TTS parallel ──────────────────────────────────────────────
+        ck = cache_key(transcript, source_lang, target_lang)
+        cached_tr = translation_cache.get(ck)
+
+        if cached_tr:
+            translation = cached_tr
+            stack['translate'] = 'cache'
+        else:
+            translation, tr_provider = await translate_tiered(
+                transcript, source_lang, target_lang, free_trial=free_trial,
+            )
+            translation_cache.put(ck, translation)
+            stack['translate'] = tr_provider
+
+        translation = apply_glossary(translation, glossary_raw)
+        yield f'data: {json_mod.dumps({"type": "translation", "text": translation, "ai_stt": stack.get("stt"), "ai_translate": stack.get("translate")})}\n\n'
+
+        # ── 3. TTS — fire immediately after TR ────────────────────────────────
+        audio_b64 = ''
+        processing_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
+        try:
+            mp3_bytes = await synthesize_streaming(
+                translation, target_lang, voice_id=get_voice_id(voice_gender),
+            )
+            audio_b64 = base64.b64encode(mp3_bytes).decode('ascii')
+        except Exception as e:
+            log.warning('Stream TTS failed: %s', e)
+            yield f'data: {json_mod.dumps({"type": "tts_error", "message": "elevenlabs_failed"})}\n\n'
+
+        # ── 4. Usage accounting ───────────────────────────────────────────────
+        elapsed_s = int((datetime.now(timezone.utc) - started_at).total_seconds()) + 5
+        if free_trial:
+            await log_pipeline_usage(db, license_key, elapsed_s)
+        else:
+            ok = await consume_minutes(db, license_key, elapsed_s)
+            if not ok:
+                yield f'data: {json_mod.dumps({"type": "error", "message": "minutes_exhausted"})}\n\n'
+                return
+
+        yield f'data: {json_mod.dumps({"type": "audio_b64", "data": audio_b64, "processing_ms": processing_ms})}\n\n'
+        yield f'data: {json_mod.dumps({"type": "done"})}\n\n'
+
+        total_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
+        log.info(
+            f'Pipeline [{source_lang}→{target_lang}] tier={stack.get("tier")} '
+            f'stt={stack.get("stt")} tr={stack.get("translate")} {total_ms}ms: {transcript[:40]!r}'
+        )
+
+    return StreamingResponse(generate(), media_type='text/event-stream')
 
 
 # ── TTS only ──────────────────────────────────────────────────────────────────
@@ -293,8 +428,18 @@ class TtsRequest(BaseModel):
 
 @app.post('/api/tts')
 @limiter.limit('60/minute')
-async def tts_endpoint(request: Request, body: TtsRequest, _license: dict = Depends(require_license)):
+async def tts_endpoint(
+    request: Request,
+    body: TtsRequest,
+    db: AsyncSession = Depends(get_db),
+    _license: dict = Depends(require_license),
+):
     mp3 = await synthesize(body.text, body.target_lang)
+    license_key = resolve_license_key(_license, request)
+    if not _license.get('free_trial'):
+        await consume_minutes(db, license_key, 30)
+    else:
+        await log_pipeline_usage(db, license_key, 30)
     return Response(content=mp3, media_type='audio/mpeg')
 
 
@@ -317,9 +462,69 @@ class ConsumeRequest(BaseModel):
 
 @app.post('/api/license/consume')
 @limiter.limit('200/minute')
-async def license_consume(request: Request, body: ConsumeRequest, db: AsyncSession = Depends(get_db)):
+async def license_consume(
+    request: Request,
+    body: ConsumeRequest,
+    db: AsyncSession = Depends(get_db),
+    _license: dict = Depends(require_license),
+):
+    auth_key = request.headers.get('Authorization', '')[7:]
+    if auth_key != body.licenseKey and not is_firebase_token(auth_key):
+        raise HTTPException(403, 'Key mismatch')
     ok = await consume_minutes(db, body.licenseKey, body.seconds)
     return {'ok': ok}
+
+
+class ReferralClaimRequest(BaseModel):
+    ref_code: str
+
+
+@app.post('/api/referral/claim')
+@limiter.limit('20/hour')
+async def referral_claim(
+    request: Request,
+    body: ReferralClaimRequest,
+    db: AsyncSession = Depends(get_db),
+    _license: dict = Depends(require_license),
+):
+    """Grant 15 bonus minutes to referrer when a new user claims their code."""
+    referred_uid = _license.get('firebase_uid')
+    if not referred_uid:
+        raise HTTPException(400, 'Firebase sign-in required')
+
+    ref = body.ref_code.strip().upper().replace('VBREF-', '')
+    if len(ref) < 6:
+        raise HTTPException(400, 'Invalid referral code')
+
+    stmt = select(License).where(License.firebase_uid.like(f'{ref}%'), License.active == True)
+    referrer_lic = (await db.execute(stmt)).scalar_one_or_none()
+    if not referrer_lic:
+        raise HTTPException(404, 'Referrer not found')
+
+    referrer_uid = referrer_lic.firebase_uid or ''
+    if referred_uid == referrer_uid or referred_uid.startswith(referrer_uid[:8]):
+        raise HTTPException(400, 'Cannot use your own code')
+
+    dup = select(UsageEvent).where(
+        UsageEvent.event == 'referral_claim',
+        UsageEvent.meta == referred_uid,
+    )
+    if (await db.execute(dup)).scalar_one_or_none():
+        return {'ok': True, 'already_claimed': True}
+
+    await db.execute(
+        update(License)
+        .where(License.id == referrer_lic.id)
+        .values(minutes_total=referrer_lic.minutes_total + 15)
+    )
+    db.add(UsageEvent(
+        license_key=referrer_lic.key,
+        event='referral_claim',
+        seconds=0,
+        meta=referred_uid,
+    ))
+    await db.commit()
+    return {'ok': True, 'minutes_granted': 15}
 
 
 # ── Order creation ────────────────────────────────────────────────────────────
@@ -438,7 +643,7 @@ async def crypto_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
     log.info(f'NOWPayments IPN: order={order_id} status={payment_status}')
 
-    if payment_status in ('finished', 'confirmed', 'partially_paid'):
+    if payment_status in ('finished', 'confirmed'):
         await _confirm_order(db, order_id, payment_ref=payment_id)
 
     return {'received': True}
@@ -469,29 +674,42 @@ async def _confirm_order(db: AsyncSession, order_id: str, payment_ref: str = '',
     if not order or order.status == 'confirmed':
         return False
 
-    # Extract firebase_uid from notes if present
     firebase_uid = ''
     existing_notes = order.notes or ''
     if existing_notes.startswith('firebase_uid:'):
         firebase_uid = existing_notes.split('firebase_uid:', 1)[1].split('\n')[0].strip()
 
-    # Create the license
-    lic = await create_license(
-        db,
-        email=order.email,
-        plan_id=order.plan_id,
-        payment_method=order.payment_method,
-        payment_ref=order.payment_ref or payment_ref,
-    )
-    await activate_license(db, lic.key)
+    plan = get_plan(order.plan_id)
 
-    # Link to Firebase account if uid provided
+    # Stack minutes on existing paid license if same account
+    existing_paid = None
     if firebase_uid:
-        await db.execute(
-            update(License).where(License.id == lic.id).values(firebase_uid=firebase_uid)
+        stmt2 = select(License).where(
+            License.firebase_uid == firebase_uid,
+            License.active == True,
+            License.plan_id != 'free',
         )
+        existing_paid = (await db.execute(stmt2)).scalar_one_or_none()
 
-    # Update order
+    if existing_paid:
+        lic = await stack_minutes_on_license(db, existing_paid, order.plan_id)
+        if firebase_uid:
+            await deactivate_free_licenses(db, firebase_uid)
+    else:
+        lic = await create_license(
+            db,
+            email=order.email,
+            plan_id=order.plan_id,
+            payment_method=order.payment_method,
+            payment_ref=order.payment_ref or payment_ref,
+        )
+        await activate_license(db, lic.key)
+        if firebase_uid:
+            await db.execute(
+                update(License).where(License.id == lic.id).values(firebase_uid=firebase_uid)
+            )
+            await deactivate_free_licenses(db, firebase_uid)
+
     full_notes = f'{existing_notes}\n{notes}'.strip() if notes else existing_notes
     await db.execute(
         update(Order)
@@ -506,7 +724,12 @@ async def _confirm_order(db: AsyncSession, order_id: str, payment_ref: str = '',
     await db.commit()
 
     log.info(f'Order {order_id} confirmed → license {lic.key} for {order.email}')
-    # TODO: send license key by email (Resend / SendGrid)
+    await send_license_email(
+        order.email,
+        lic.key,
+        plan['name'] if plan else order.plan_id,
+        plan['minutes'] if plan else 0,
+    )
     return True
 
 

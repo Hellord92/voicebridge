@@ -21,14 +21,17 @@ struct PipelineConfig {
     std::string sourceLang = "auto"; /* "tr", "fr", "de" … */
     std::string targetLang = "en";
     std::string voiceGender = "female"; /* "male" | "female" */
+    std::string glossaryJson = "[]";    /* [{source,target}] for proper nouns */
 
     bool   monitorEnabled  = false;  /* play TTS through speaker too */
     int    outputDeviceIndex = -1;
 
     std::function<void(const std::string &level, const std::string &msg)> logCallback;
     std::function<void(const std::string &transcript)> transcriptCallback;
+    std::function<void(const std::string &partial)>   partialTranscriptCallback;
     std::function<void(const std::string &translation)> translationCallback;
     std::function<void(const std::string &errMsg)>      errorCallback;
+    std::function<void(int latencyMs)>                   latencyCallback;
 };
 
 class AudioPipeline {

@@ -19,8 +19,8 @@
 
 struct PhraseConfig {
     double   sampleRate      = 48000.0;
-    uint32_t silenceFrames   = 14400;    /* 300 ms at 48 kHz */
-    uint32_t minPhraseFrames = 9600;     /* 200 ms minimum */
+    uint32_t silenceFrames   = 7200;     /* 150 ms at 48 kHz */
+    uint32_t minPhraseFrames = 4800;     /* 100 ms minimum */
     uint32_t maxPhraseFrames = 576000;   /* 12 seconds maximum */
     int      vadAggressiveness = 2;
 };
