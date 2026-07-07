@@ -49,13 +49,13 @@
           "<!(brew --prefix openssl@3 2>/dev/null || echo /opt/homebrew/opt/openssl@3)/include"
         ],
         "libraries": [
-          "-L<!(brew --prefix portaudio 2>/dev/null || echo /opt/homebrew/opt/portaudio)/lib",
-          "-lportaudio",
-          "-L<!(brew --prefix openssl@3 2>/dev/null || echo /opt/homebrew/opt/openssl@3)/lib",
-          "-lssl",
-          "-lcrypto",
+          "<!(brew --prefix portaudio 2>/dev/null || echo /opt/homebrew/opt/portaudio)/lib/libportaudio.a",
+          "<!(brew --prefix openssl@3 2>/dev/null || echo /opt/homebrew/opt/openssl@3)/lib/libssl.a",
+          "<!(brew --prefix openssl@3 2>/dev/null || echo /opt/homebrew/opt/openssl@3)/lib/libcrypto.a",
           "-framework CoreAudio",
-          "-framework AudioToolbox"
+          "-framework AudioToolbox",
+          "-framework CoreFoundation",
+          "-framework AudioUnit"
         ]
       }],
       ["OS=='win'", {
