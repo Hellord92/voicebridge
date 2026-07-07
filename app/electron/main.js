@@ -95,7 +95,13 @@ try {
   } else {
     core = require('@voicebridge/core');
   }
-  if (core) console.log('[main] Core addon loaded OK');
+  if (core) {
+    if (core._loadError) {
+      console.error('[main] Core addon stub active — load error:', core._loadError);
+    } else {
+      console.log('[main] Core addon loaded OK');
+    }
+  }
 } catch (e) {
   console.error('[main] Core addon failed to load:', e.message);
   core = null;
@@ -435,7 +441,7 @@ ipcMain.handle('start-pipeline', async (_e, opts) => {
   const errors = {
     '-1':  'Could not open microphone — allow Microphone access in System Settings → Privacy & Security → Microphone.',
     '-2':  'Microphone stream failed to start. Try selecting a different input device.',
-    '-99': 'Audio engine failed to load. Please reinstall VoiceBridge.',
+    '-99': `Audio engine failed to load. ${core?._loadError ? 'Reason: ' + core._loadError.slice(0, 120) : 'Please reinstall VoiceBridge.'}`,
   };
   return { ok: false, error: errors[String(rc)] || `Pipeline error (${rc})`, code: rc };
 });
