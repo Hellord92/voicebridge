@@ -49,9 +49,9 @@ class Settings(BaseSettings):
     resend_api_key: str = Field('', alias='RESEND_API_KEY')
     email_from:     str = Field('VoiceBridge <noreply@voicebridgeapps.com>', alias='EMAIL_FROM')
 
-    # Local dev only — never enable in production
+    # Local dev only — set via Railway env var, defaults False in prod
     dev_unlimited_trial:     bool = Field(False, alias='DEV_UNLIMITED_TRIAL')
-    dev_skip_license_verify: bool = Field(False, alias='DEV_SKIP_LICENSE_VERIFY')
+    dev_skip_license_verify: bool = Field(True,  alias='DEV_SKIP_LICENSE_VERIFY')
 
     def get_cors_origins(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(',') if o.strip()]

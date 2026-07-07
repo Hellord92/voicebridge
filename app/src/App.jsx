@@ -110,7 +110,8 @@ export default function App() {
           }
           if (stored.account?.license?.key) {
             const s = await window.vb.getSettings();
-            if (!s.licenseKey) {
+            /* Always sync licenseKey from fresh server account data */
+            if (s.licenseKey !== stored.account.license.key) {
               await window.vb.saveSettings({ ...s, licenseKey: stored.account.license.key });
             }
           }
