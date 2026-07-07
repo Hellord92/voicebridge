@@ -367,7 +367,53 @@ ipcMain.handle('get-settings', async () => ({
   referralCode:      store.get('referralCode', ''),
 }));
 
-ipcMain.handle('get-stored-user', async () => store.get('firebaseUser', null));
+ipcMain.handle('get-stored-user', async () => {
+  const user = store.get('firebaseUser', null);
+  if (!user) return null;
+
+  const needsRefresh = !user.tokenExpiry || Date.now() > user.tokenExpiry - 120_000;
+  if (!needsRefresh) return user;
+
+  /* Token expired / close to expiry — refresh via Firebase REST API */
+  if (user.refreshToken && user.firebaseApiKey) {
+    try {
+      const refreshUrl = `https://securetoken.googleapis.com/v1/token?key=${user.firebaseApiKey}`;
+      const refreshResult = await httpPost(refreshUrl, {
+        grant_type:    'refresh_token',
+        refresh_token: user.refreshToken,
+      });
+
+      if (refreshResult.ok && refreshResult.data?.id_token) {
+        const newToken    = refreshResult.data.id_token;
+        const newRefresh  = refreshResult.data.refresh_token || user.refreshToken;
+
+        user.idToken      = newToken;
+        user.refreshToken = newRefresh;
+        user.tokenExpiry  = Date.now() + 3500 * 1000;
+        console.log('[main] Firebase token refreshed successfully');
+
+        /* Re-sync account + license from server */
+        const serverUrl   = getServerUrl();
+        const acctResp    = await httpPost(`${serverUrl}/api/auth/me`, null, {
+          Authorization: `Bearer ${newToken}`,
+        });
+        if (acctResp.ok && acctResp.data?.license?.key) {
+          user.account = acctResp.data;
+          store.set('licenseKey', acctResp.data.license.key);
+          console.log('[main] License synced:', acctResp.data.license.key);
+        } else {
+          console.warn('[main] Account sync failed:', acctResp.status, acctResp.data?.detail);
+        }
+
+        store.set('firebaseUser', user);
+      }
+    } catch (e) {
+      console.warn('[main] Token refresh error:', e.message);
+    }
+  }
+
+  return user;
+});
 
 ipcMain.handle('save-firebase-user', async (_e, userData) => {
   store.set('firebaseUser', userData);
@@ -382,9 +428,15 @@ ipcMain.handle('sign-out', async () => {
 
 ipcMain.handle('firebase-post-login', async (_e, idToken) => {
   const serverUrl = getServerUrl();
-  return await httpPost(`${serverUrl}/api/auth/me`, null, {
+  const result = await httpPost(`${serverUrl}/api/auth/me`, null, {
     Authorization: `Bearer ${idToken}`,
   });
+  /* Persist the fresh license key immediately */
+  if (result.ok && result.data?.license?.key) {
+    store.set('licenseKey', result.data.license.key);
+    console.log('[main] License stored on login:', result.data.license.key);
+  }
+  return result;
 });
 
 ipcMain.handle('save-settings', async (_e, settings) => {
@@ -481,7 +533,7 @@ function httpPost(url, body, extraHeaders = {}) {
     };
     const mod = parsed.protocol === 'https:' ? https : require('http');
     const req = mod.request(
-      { hostname: parsed.hostname, port: parsed.port || undefined, path: parsed.pathname, method: 'POST', headers },
+      { hostname: parsed.hostname, port: parsed.port || undefined, path: parsed.pathname + (parsed.search || ''), method: 'POST', headers },
       (res) => {
         let data = '';
         res.on('data', c => data += c);
