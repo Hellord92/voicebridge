@@ -81,7 +81,7 @@ PLANS: list[dict] = [
 ]
 
 PLAN_BY_ID: dict[str, dict] = {p["id"]: p for p in PLANS}
-FREE_TRIAL_SECONDS = 5 * 60  # 300 seconds
+FREE_TRIAL_SECONDS = 30 * 60  # 1800 seconds — 30 minutes per day
 
 
 def get_plan(plan_id: str) -> dict:  # Optional

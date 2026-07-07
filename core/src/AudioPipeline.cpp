@@ -318,11 +318,18 @@ struct AudioPipeline::Impl {
             sse.audioB64 = bodyJson["audio_b64"].get<std::string>();
         } else {
             const int code = streamRes ? streamRes->status : (fallback ? fallback->status : 0);
-            log("error", "Pipeline HTTP " + std::to_string(code) + " → " + ep.host + ":" + std::to_string(ep.port));
+            std::string body;
+            if (streamRes) body = streamRes->body.substr(0, 200);
+            else if (fallback) body = fallback->body.substr(0, 200);
+            log("error", "Pipeline HTTP " + std::to_string(code) + " body=" + body);
             if (cfg.errorCallback) {
-                cfg.errorCallback(code == 0
-                    ? "Cannot reach API at " + cfg.serverUrl + " — is dev server running?"
-                    : "Server error");
+                std::string msg;
+                if (code == 0)        msg = "Cannot reach API — check network or server";
+                else if (code == 401) msg = "Unauthorized (401) — license key missing";
+                else if (code == 403) msg = "Trial expired or invalid license (403)";
+                else if (code == 422) msg = "Bad request (422) — " + body.substr(0, 80);
+                else                  msg = "Server error (HTTP " + std::to_string(code) + ")";
+                cfg.errorCallback(msg);
             }
             return;
         }

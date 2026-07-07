@@ -47,8 +47,8 @@ def verify_key_format(key: str) -> bool:
     return parts[4] == _sign(inner)
 
 
-async def free_trial_seconds_used(db: AsyncSession, key: str, window_minutes: int = 15) -> int:
-    """Sum pipeline usage seconds for free tier within rolling window."""
+async def free_trial_seconds_used(db: AsyncSession, key: str, window_minutes: int = 1440) -> int:
+    """Sum pipeline usage seconds for free tier within rolling window (default: 24 hours)."""
     since = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
     stmt = select(func.coalesce(func.sum(UsageEvent.seconds), 0)).where(
         UsageEvent.license_key == key,

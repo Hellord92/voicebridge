@@ -153,13 +153,14 @@ async def health(db: AsyncSession = Depends(get_db)):
     except Exception:
         db_ok = False
     return {
-        'status': 'ok' if db_ok else 'degraded',
-        'db':     db_ok,
-        'groq':   bool(settings.groq_api_key),
-        'openai': bool(settings.openai_api_key),
-        'gemini': bool(settings.gemini_api_key),
-        'eleven': bool(settings.elevenlabs_api_key),
-        'time':   datetime.now(timezone.utc).isoformat(),
+        'status':   'ok' if db_ok else 'degraded',
+        'db':       db_ok,
+        'groq':     bool(settings.groq_api_key),
+        'openai':   bool(settings.openai_api_key),
+        'gemini':   bool(settings.gemini_api_key),
+        'eleven':   bool(settings.elevenlabs_api_key),
+        'firebase': bool(settings.firebase_service_account_json),
+        'time':     datetime.now(timezone.utc).isoformat(),
     }
 
 
