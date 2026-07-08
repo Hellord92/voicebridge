@@ -517,6 +517,108 @@ ipcMain.handle('unmute-input', () => {
   return { ok: true };
 });
 
+/* ── OpenAI Realtime WebSocket Pipeline ────────────────────────────────────── */
+let realtimeWs     = null;
+let realtimeActive = false;
+
+ipcMain.handle('start-realtime', async (_e, opts) => {
+  if (realtimeActive) return { ok: false, error: 'Already running' };
+
+  const serverUrl  = getServerUrl();
+  const stored     = store.get('user') || {};
+  const licenseKey = store.get('licenseKey') || '';
+  const idToken    = stored.idToken || '';
+
+  /* 1. Get ephemeral session token from our server */
+  const sessionRes = await httpPost(
+    `${serverUrl}/api/realtime/session`,
+    { source_lang: opts.sourceLang || 'auto', target_lang: opts.targetLang || 'en', voice: 'alloy' },
+    idToken ? { Authorization: `Bearer ${idToken}` } : { 'X-License-Key': licenseKey }
+  );
+  if (!sessionRes.ok) return { ok: false, error: sessionRes.error || 'Session error' };
+
+  const { client_secret } = sessionRes.data || sessionRes;
+  if (!client_secret) return { ok: false, error: 'No session token returned' };
+
+  /* 2. Open WebSocket to OpenAI Realtime */
+  const WebSocket = require('ws');
+  const ws = new WebSocket(
+    'wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview',
+    { headers: {
+        Authorization: `Bearer ${client_secret}`,
+        'OpenAI-Beta': 'realtime=v1',
+    }}
+  );
+
+  ws.on('open', () => {
+    realtimeActive = true;
+    /* Start raw audio stream from mic */
+    if (core) {
+      core.startRawStream({
+        inputDeviceIndex: opts.inputDeviceIndex ?? -1,
+        onAudio: (pcm16Buffer) => {
+          if (!realtimeActive || ws.readyState !== 1) return;
+          const b64 = pcm16Buffer.toString('base64');
+          ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
+        },
+      });
+    }
+    if (win) win.webContents.send('realtime-status', { connected: true });
+  });
+
+  ws.on('message', (raw) => {
+    let ev;
+    try { ev = JSON.parse(raw); } catch { return; }
+
+    switch (ev.type) {
+      /* Streaming transcript (speech-to-text) */
+      case 'conversation.item.input_audio_transcription.delta':
+        if (win && ev.delta) win.webContents.send('partial-transcript', ev.delta);
+        break;
+
+      case 'conversation.item.input_audio_transcription.completed':
+        if (win && ev.transcript) win.webContents.send('transcript', ev.transcript);
+        break;
+
+      /* Streaming translation text */
+      case 'response.text.delta':
+        if (win && ev.delta) win.webContents.send('realtime-translation-delta', ev.delta);
+        break;
+
+      case 'response.text.done':
+        if (win && ev.text) win.webContents.send('translation', ev.text);
+        break;
+
+      case 'error':
+        if (win) win.webContents.send('error', ev.error?.message || 'Realtime error');
+        break;
+    }
+  });
+
+  ws.on('close', () => {
+    realtimeActive = false;
+    try { if (core) core.stopRawStream(); } catch (_) {}
+    if (win) win.webContents.send('realtime-status', { connected: false });
+  });
+
+  ws.on('error', (err) => {
+    if (win) win.webContents.send('error', `Realtime WS: ${err.message}`);
+  });
+
+  realtimeWs = ws;
+  return { ok: true };
+});
+
+ipcMain.handle('stop-realtime', () => {
+  realtimeActive = false;
+  try { if (core) core.stopRawStream(); } catch (_) {}
+  if (realtimeWs) {
+    try { realtimeWs.close(); } catch (_) {}
+    realtimeWs = null;
+  }
+  return { ok: true };
+});
+
 ipcMain.handle('validate-license', async (_e, licenseKey) => {
   const serverUrl = getServerUrl();
   return await httpPost(`${serverUrl}/api/license/validate`, { licenseKey });

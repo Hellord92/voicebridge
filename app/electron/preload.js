@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('vb', {
   stopPipeline:     ()       => ipcRenderer.invoke('stop-pipeline'),
   muteInput:        ()       => ipcRenderer.invoke('mute-input'),
   unmuteInput:      ()       => ipcRenderer.invoke('unmute-input'),
+  startRealtime:    (opts)   => ipcRenderer.invoke('start-realtime', opts),
+  stopRealtime:     ()       => ipcRenderer.invoke('stop-realtime'),
 
   validateLicense:  (key)    => ipcRenderer.invoke('validate-license', key),
 
@@ -26,9 +28,11 @@ contextBridge.exposeInMainWorld('vb', {
   detectMeetingApps:  ()          => ipcRenderer.invoke('detect-meeting-apps'),
   exportSession:      (data)      => ipcRenderer.invoke('export-session', data),
 
-  onTranscript:        (cb) => { ipcRenderer.removeAllListeners('transcript');         ipcRenderer.on('transcript',         (_e, t)  => cb(t));  },
-  onPartialTranscript: (cb) => { ipcRenderer.removeAllListeners('partial-transcript'); ipcRenderer.on('partial-transcript', (_e, t)  => cb(t));  },
-  onTranslation:       (cb) => { ipcRenderer.removeAllListeners('translation');        ipcRenderer.on('translation',        (_e, t)  => cb(t));  },
-  onError:             (cb) => { ipcRenderer.removeAllListeners('error');              ipcRenderer.on('error',              (_e, m)  => cb(m));  },
-  onLatency:           (cb) => { ipcRenderer.removeAllListeners('latency');            ipcRenderer.on('latency',            (_e, ms) => cb(ms)); },
+  onTranscript:             (cb) => { ipcRenderer.removeAllListeners('transcript');                  ipcRenderer.on('transcript',                  (_e, t)  => cb(t));  },
+  onPartialTranscript:      (cb) => { ipcRenderer.removeAllListeners('partial-transcript');          ipcRenderer.on('partial-transcript',          (_e, t)  => cb(t));  },
+  onTranslation:            (cb) => { ipcRenderer.removeAllListeners('translation');                 ipcRenderer.on('translation',                 (_e, t)  => cb(t));  },
+  onRealtimeTranslationDelta:(cb) => { ipcRenderer.removeAllListeners('realtime-translation-delta'); ipcRenderer.on('realtime-translation-delta',  (_e, d)  => cb(d));  },
+  onRealtimeStatus:         (cb) => { ipcRenderer.removeAllListeners('realtime-status');             ipcRenderer.on('realtime-status',             (_e, s)  => cb(s));  },
+  onError:                  (cb) => { ipcRenderer.removeAllListeners('error');                       ipcRenderer.on('error',                       (_e, m)  => cb(m));  },
+  onLatency:                (cb) => { ipcRenderer.removeAllListeners('latency');                     ipcRenderer.on('latency',                     (_e, ms) => cb(ms)); },
 });

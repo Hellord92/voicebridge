@@ -6,8 +6,8 @@
   "main": "electron/main.js",
   "private": true,
   "scripts": {
-    "dev":     "concurrently -k \"vite --strictPort\" \"npx --yes wait-on@8.0.1 http://127.0.0.1:5173 && electron .\"",
-    "build":   "vite build && electron-builder",
+    "dev": "concurrently -k \"vite --strictPort\" \"npx --yes wait-on@8.0.1 http://127.0.0.1:5173 && electron .\"",
+    "build": "vite build && electron-builder",
     "build:mac": "vite build && electron-builder --arm64 --mac dmg",
     "build:mac:signed": "vite build && electron-builder --arm64 --mac dmg --config.mac.notarize=false",
     "preview": "vite preview",
@@ -15,33 +15,45 @@
   },
   "dependencies": {
     "@voicebridge/core": "file:../core",
-    "electron-store":    "^8.2.0",
-    "firebase":          "^10.13.1"
+    "electron-store": "^8.2.0",
+    "firebase": "^10.13.1",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.0",
-    "autoprefixer":         "^10.4.20",
-    "concurrently":         "^8.2.2",
-    "electron":             "^31.0.0",
-    "electron-builder":     "^24.13.3",
-    "postcss":              "^8.4.41",
-    "react":                "^18.3.1",
-    "react-dom":            "^18.3.1",
-    "tailwindcss":          "^3.4.10",
-    "vite":                 "^5.4.0"
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^8.2.2",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.41",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.10",
+    "vite": "^5.4.0"
   },
   "build": {
-    "appId":   "app.voicebridge",
+    "appId": "app.voicebridge",
     "productName": "VoiceBridge",
     "icon": "assets/icon.png",
     "dmg": {
-      "window":      { "width": 640, "height": 440 },
-      "iconSize":    160,
+      "window": {
+        "width": 640,
+        "height": 440
+      },
+      "iconSize": 160,
       "iconTextSize": 14
     },
     "mac": {
-      "category":    "public.app-category.utilities",
-      "target":      [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "category": "public.app-category.utilities",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "electron/entitlements.mac.plist",
@@ -50,22 +62,33 @@
         "teamId": "323TN47N72"
       },
       "extraResources": [
-        { "from": "../drivers/macos/build/VoiceBridgeAudio.driver",
-          "to":   "VoiceBridgeAudio.driver" }
+        {
+          "from": "../drivers/macos/build/VoiceBridgeAudio.driver",
+          "to": "VoiceBridgeAudio.driver"
+        }
       ]
     },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "icon":   "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
       "extraResources": [
-        { "from": "../drivers/windows/vbaudio-setup.exe",
-          "to":   "vbaudio-setup.exe" }
+        {
+          "from": "../drivers/windows/vbaudio-setup.exe",
+          "to": "vbaudio-setup.exe"
+        }
       ]
     },
     "nsis": {
-      "oneClick":        false,
+      "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "runAfterFinish":  true
+      "runAfterFinish": true
     },
     "files": [
       "dist/**/*",

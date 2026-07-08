@@ -53,6 +53,8 @@ export default function App() {
   const [pttMode, setPttMode] = useState(false);
   const [pttHeld, setPttHeld] = useState(false);
   const pttRef = useRef(false);
+  const [realtimeMode, setRealtimeMode] = useState(false);
+  const realtimeTranslationBuffer = useRef('');
   const trialModalShown = useRef(false);
   const errorCount = useRef(0);
   const reconnectAttempt = useRef(0);
@@ -66,6 +68,7 @@ export default function App() {
 
   const handleStop = useCallback(async () => {
     try { await window.vb?.stopPipeline?.(); } catch (_) {}
+    try { await window.vb?.stopRealtime?.(); } catch (_) {}
     setRunning(false);
     setTrialActive(false);
     setStatus('idle');
@@ -215,8 +218,22 @@ export default function App() {
       setExchanges(lines => [...lines.slice(-99), { id, transcript: t, translation: '', at: Date.now() }]);
       setSessionLines(lines => [...lines.slice(-199), { type: 'transcript', text: t, at: Date.now() }]);
     });
+    /* Realtime API: streaming translation token by token */
+    window.vb.onRealtimeTranslationDelta(delta => {
+      realtimeTranslationBuffer.current += delta;
+      const buffered = realtimeTranslationBuffer.current;
+      const exId = pendingExchangeId.current;
+      setExchanges(lines => {
+        const copy = [...lines];
+        const idx = copy.findIndex(e => e.id === exId);
+        if (idx >= 0) copy[idx] = { ...copy[idx], translation: buffered };
+        return copy;
+      });
+    });
+
     window.vb.onTranslation(t => {
       lastSpeechAt.current = Date.now();
+      realtimeTranslationBuffer.current = '';
       setPipelinePhase('done');
       const exId = pendingExchangeId.current;
       const lat = lastLatencyRef.current;
@@ -420,6 +437,27 @@ export default function App() {
         });
         if (openSound) await window.vb.openSystemSettings('sound');
       }
+    }
+
+    /* Realtime mode: use OpenAI Realtime WebSocket instead of phrase pipeline */
+    if (realtimeMode) {
+      const res = await window.vb.startRealtime({
+        inputDeviceIndex: settings.inputDeviceIndex,
+        sourceLang:       settings.sourceLang || 'auto',
+        targetLang:       settings.targetLang || 'en',
+      });
+      if (res.ok) {
+        sessionStartRef.current = Date.now();
+        setRunning(true);
+        setStatus('translating');
+        setStatusMsg('Realtime mode active');
+        setShowControls(false);
+        setShowSummary(false);
+        toast('Realtime translation started', 'success');
+      } else {
+        await alert({ title: 'Realtime error', message: res.error || 'Could not start', variant: 'error' });
+      }
+      return;
     }
 
     const res = await window.vb.startPipeline({
@@ -707,6 +745,18 @@ export default function App() {
         {!running ? (
           <div className="flex items-center gap-2">
             <button onClick={handleStart} className="btn-primary btn-pulse flex-1">Start Translation</button>
+            <button
+              type="button"
+              title={realtimeMode ? 'Realtime ON — OpenAI Realtime API (~200ms)' : 'Enable Realtime mode (lowest latency)'}
+              onClick={() => setRealtimeMode(v => !v)}
+              className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                realtimeMode
+                  ? 'bg-violet-500/20 border-violet-500/50 text-violet-400'
+                  : 'border-white/10 text-slate-500 hover:text-violet-400'
+              }`}
+            >
+              ⚡RT
+            </button>
             <button
               type="button"
               title={pttMode ? 'Push-to-Talk ON — hold Space to speak' : 'Enable Push-to-Talk (only YOUR voice)'}

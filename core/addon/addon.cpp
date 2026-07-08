@@ -3,8 +3,110 @@
 #include "../include/AudioCapture.h"
 #include <memory>
 #include <thread>
+#include <vector>
+#include <cstring>
+#include <cstdint>
+#include <atomic>
 
 static std::unique_ptr<AudioPipeline> gPipeline;
+
+/* ── Raw audio stream (for Realtime API) ───────────────────────────────────── */
+static VBAudioCapture          *gRawCapture    = nullptr;
+static Napi::ThreadSafeFunction gRawTsfn;
+static std::atomic<bool>        gRawRunning    {false};
+
+/* Accumulate ~100ms of audio (48kHz × 0.1s = 4800 frames) */
+static std::vector<float>       gRawAccum;
+static const uint32_t           RAW_CHUNK_FRAMES = 4800; /* 100ms @ 48kHz */
+
+/** Resample float32 mono 48kHz → PCM16 mono 24kHz (simple decimation ×2) */
+static std::vector<int16_t> resampleTo24kPCM16(const float *src, uint32_t frames48)
+{
+    uint32_t out_frames = frames48 / 2;
+    std::vector<int16_t> out(out_frames);
+    for (uint32_t i = 0; i < out_frames; i++) {
+        /* Average adjacent pairs for anti-aliasing */
+        float s = (src[i * 2] + src[i * 2 + 1]) * 0.5f;
+        if (s >  1.0f) s =  1.0f;
+        if (s < -1.0f) s = -1.0f;
+        out[i] = (int16_t)(s * 32767.0f);
+    }
+    return out;
+}
+
+static void rawCaptureCallback(const float *frames, uint32_t count, void * /*ud*/)
+{
+    if (!gRawRunning.load()) return;
+    gRawAccum.insert(gRawAccum.end(), frames, frames + count);
+    if (gRawAccum.size() < RAW_CHUNK_FRAMES) return;
+
+    /* Have ~100ms — resample and send to JS */
+    auto pcm16 = resampleTo24kPCM16(gRawAccum.data(), RAW_CHUNK_FRAMES);
+    gRawAccum.erase(gRawAccum.begin(), gRawAccum.begin() + RAW_CHUNK_FRAMES);
+
+    /* Copy to heap for async delivery */
+    auto *heap = new std::vector<int16_t>(std::move(pcm16));
+    gRawTsfn.NonBlockingCall(heap, [](Napi::Env env, Napi::Function cb, std::vector<int16_t> *data) {
+        /* Wrap PCM16 bytes as a Node Buffer */
+        size_t bytes = data->size() * sizeof(int16_t);
+        auto buf = Napi::Buffer<uint8_t>::Copy(env,
+            reinterpret_cast<const uint8_t *>(data->data()), bytes);
+        delete data;
+        cb.Call({buf});
+    });
+}
+
+Napi::Value StartRawStream(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    if (gRawRunning.load())
+        return Napi::Boolean::New(env, false);
+
+    if (info.Length() < 1 || !info[0].IsObject())
+        return Napi::Boolean::New(env, false);
+
+    auto opts = info[0].As<Napi::Object>();
+    int deviceIndex = -1;
+    if (opts.Has("inputDeviceIndex"))
+        deviceIndex = opts.Get("inputDeviceIndex").As<Napi::Number>().Int32Value();
+
+    if (!opts.Has("onAudio") || !opts.Get("onAudio").IsFunction())
+        return Napi::Boolean::New(env, false);
+
+    auto fn = opts.Get("onAudio").As<Napi::Function>();
+    gRawTsfn = Napi::ThreadSafeFunction::New(env, fn, "rawAudio", 0, 1);
+    gRawAccum.clear();
+    gRawAccum.reserve(RAW_CHUNK_FRAMES * 2);
+    gRawRunning.store(true);
+
+    gRawCapture = vb_capture_create(deviceIndex, 48000.0, 1440);
+    if (!gRawCapture) {
+        gRawRunning.store(false);
+        gRawTsfn.Release();
+        return Napi::Boolean::New(env, false);
+    }
+    if (vb_capture_start(gRawCapture, rawCaptureCallback, nullptr) != 0) {
+        vb_capture_destroy(gRawCapture);
+        gRawCapture = nullptr;
+        gRawRunning.store(false);
+        gRawTsfn.Release();
+        return Napi::Boolean::New(env, false);
+    }
+    return Napi::Boolean::New(env, true);
+}
+
+Napi::Value StopRawStream(const Napi::CallbackInfo &info)
+{
+    gRawRunning.store(false);
+    if (gRawCapture) {
+        vb_capture_stop(gRawCapture);
+        vb_capture_destroy(gRawCapture);
+        gRawCapture = nullptr;
+    }
+    gRawAccum.clear();
+    gRawTsfn.Release();
+    return info.Env().Undefined();
+}
 
 Napi::Value StartPipeline(const Napi::CallbackInfo &info)
 {
@@ -145,6 +247,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     exports.Set("setVoiceGender",   Napi::Function::New(env, SetVoiceGender));
     exports.Set("muteInput",        Napi::Function::New(env, MuteInput));
     exports.Set("unmuteInput",      Napi::Function::New(env, UnmuteInput));
+    exports.Set("startRawStream",   Napi::Function::New(env, StartRawStream));
+    exports.Set("stopRawStream",    Napi::Function::New(env, StopRawStream));
     exports.Set("listInputDevices", Napi::Function::New(env, ListInputDevices));
     exports.Set("refreshDevices",   Napi::Function::New(env, RefreshDevices));
     return exports;

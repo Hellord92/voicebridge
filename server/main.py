@@ -444,6 +444,70 @@ async def tts_endpoint(
     return Response(content=mp3, media_type='audio/mpeg')
 
 
+# ── OpenAI Realtime Session Token ─────────────────────────────────────────────
+
+class RealtimeSessionRequest(BaseModel):
+    source_lang: str = 'auto'
+    target_lang: str = 'en'
+    voice: str = 'alloy'  # OpenAI built-in voice (alloy/echo/fable/onyx/nova/shimmer)
+
+
+@app.post('/api/realtime/session')
+@limiter.limit('30/minute')
+async def realtime_session(
+    request: Request,
+    body: RealtimeSessionRequest,
+    db: AsyncSession = Depends(get_db),
+    _license: dict = Depends(require_license),
+):
+    """
+    Creates an OpenAI Realtime ephemeral session token.
+    Client uses this to connect directly to OpenAI WebSocket (low latency).
+    """
+    if not settings.openai_api_key:
+        raise HTTPException(503, 'OpenAI API key not configured on server')
+
+    src = body.source_lang if body.source_lang != 'auto' else 'any language'
+    system_prompt = (
+        f'You are a professional real-time simultaneous interpreter. '
+        f'The user speaks in {src}. '
+        f'Translate everything they say into {body.target_lang}. '
+        f'Output ONLY the translation — no labels, no explanations, no quotes. '
+        f'If the input is noise, filler sounds, or incomplete, output nothing.'
+    )
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            'https://api.openai.com/v1/realtime/sessions',
+            headers={
+                'Authorization': f'Bearer {settings.openai_api_key}',
+                'Content-Type': 'application/json',
+            },
+            json={
+                'model': 'gpt-4o-mini-realtime-preview',
+                'modalities': ['text'],          # text output → we use ElevenLabs for TTS
+                'instructions': system_prompt,
+                'input_audio_format': 'pcm16',
+                'input_audio_transcription': {'model': 'gpt-4o-mini-transcribe'},
+                'turn_detection': {
+                    'type': 'server_vad',
+                    'threshold': 0.5,
+                    'prefix_padding_ms': 300,
+                    'silence_duration_ms': 400,
+                },
+            },
+        )
+        if resp.status_code != 200:
+            raise HTTPException(502, f'OpenAI session error: {resp.text}')
+        data = resp.json()
+
+    return {
+        'client_secret': data.get('client_secret', {}).get('value', ''),
+        'session_id': data.get('id', ''),
+        'expires_at': data.get('client_secret', {}).get('expires_at', 0),
+    }
+
+
 # ── License validate / consume ────────────────────────────────────────────────
 
 class ValidateRequest(BaseModel):
