@@ -53,6 +53,10 @@ public:
     /** Update TTS voice gender (male/female). */
     void setVoiceGender(const std::string &gender);
 
+    /** Mute/unmute microphone input (for push-to-talk mode). */
+    void muteInput();
+    void unmuteInput();
+
 private:
     struct Impl;
     Impl *mImpl;

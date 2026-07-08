@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install system deps
-        run: brew install cmake portaudio
+        run: brew install cmake portaudio openssl@3
 
       - name: Build CoreAudio driver
         run: |
@@ -67,8 +67,12 @@ jobs:
         uses: actions/setup-node@v4
         with: { node-version: '20' }
 
-      - name: Install PortAudio (vcpkg)
+      - name: Build Windows virtual mic + PortAudio
         run: |
+          echo "Windows virtual mic — see drivers/windows/README.md"
+          if (Test-Path drivers/windows/WinVirtualMic.cpp) {
+            echo "WinVirtualMic sources present; full WDM build requires VS + WDK."
+          }
           vcpkg install portaudio:x64-windows
           echo "VCPKG_ROOT=C:/vcpkg" >> $env:GITHUB_ENV
 

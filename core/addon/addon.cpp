@@ -93,6 +93,18 @@ Napi::Value SetVoiceGender(const Napi::CallbackInfo &info)
     return env.Undefined();
 }
 
+Napi::Value MuteInput(const Napi::CallbackInfo &info)
+{
+    if (gPipeline) gPipeline->muteInput();
+    return info.Env().Undefined();
+}
+
+Napi::Value UnmuteInput(const Napi::CallbackInfo &info)
+{
+    if (gPipeline) gPipeline->unmuteInput();
+    return info.Env().Undefined();
+}
+
 static Napi::Array DeviceInfosToArray(Napi::Env env, VBDeviceInfo devs[], int count)
 {
     auto arr = Napi::Array::New(env, (size_t)count);
@@ -131,6 +143,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     exports.Set("stopPipeline",     Napi::Function::New(env, StopPipeline));
     exports.Set("setLanguages",     Napi::Function::New(env, SetLanguages));
     exports.Set("setVoiceGender",   Napi::Function::New(env, SetVoiceGender));
+    exports.Set("muteInput",        Napi::Function::New(env, MuteInput));
+    exports.Set("unmuteInput",      Napi::Function::New(env, UnmuteInput));
     exports.Set("listInputDevices", Napi::Function::New(env, ListInputDevices));
     exports.Set("refreshDevices",   Napi::Function::New(env, RefreshDevices));
     return exports;

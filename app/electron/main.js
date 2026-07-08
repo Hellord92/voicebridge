@@ -507,6 +507,16 @@ ipcMain.handle('stop-pipeline', () => {
   return { ok: true };
 });
 
+ipcMain.handle('mute-input', () => {
+  try { if (core) core.muteInput(); } catch (_) {}
+  return { ok: true };
+});
+
+ipcMain.handle('unmute-input', () => {
+  try { if (core) core.unmuteInput(); } catch (_) {}
+  return { ok: true };
+});
+
 ipcMain.handle('validate-license', async (_e, licenseKey) => {
   const serverUrl = getServerUrl();
   return await httpPost(`${serverUrl}/api/license/validate`, { licenseKey });

@@ -50,6 +50,9 @@ export default function App() {
   const [blackHoleAvailable, setBlackHoleAvailable] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [sessionLines, setSessionLines] = useState([]);
+  const [pttMode, setPttMode] = useState(false);
+  const [pttHeld, setPttHeld] = useState(false);
+  const pttRef = useRef(false);
   const trialModalShown = useRef(false);
   const errorCount = useRef(0);
   const reconnectAttempt = useRef(0);
@@ -72,6 +75,33 @@ export default function App() {
     setShowControls(true);
     setShowSummary(true);
   }, []);
+
+  /* Push-to-Talk: Space bar mutes/unmutes input while running */
+  useEffect(() => {
+    if (!running || !pttMode) return;
+    const down = (e) => {
+      if (e.code !== 'Space' || e.repeat) return;
+      e.preventDefault();
+      pttRef.current = true;
+      setPttHeld(true);
+      window.vb?.unmuteInput?.();
+    };
+    const up = (e) => {
+      if (e.code !== 'Space') return;
+      pttRef.current = false;
+      setPttHeld(false);
+      window.vb?.muteInput?.();
+    };
+    /* Start muted when PTT mode is on */
+    window.vb?.muteInput?.();
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.vb?.unmuteInput?.(); /* restore on cleanup */
+    };
+  }, [running, pttMode]);
 
   const showTrialEndedModal = useCallback(async () => {
     if (trialModalShown.current) return;
@@ -675,9 +705,40 @@ export default function App() {
 
       <div className="px-5 pb-5 pt-2 space-y-2 flex-shrink-0 border-t border-white/5 bg-[#0a0a12]">
         {!running ? (
-          <button onClick={handleStart} className="btn-primary btn-pulse w-full">Start Translation</button>
+          <div className="flex items-center gap-2">
+            <button onClick={handleStart} className="btn-primary btn-pulse flex-1">Start Translation</button>
+            <button
+              type="button"
+              title={pttMode ? 'Push-to-Talk ON — hold Space to speak' : 'Enable Push-to-Talk (only YOUR voice)'}
+              onClick={() => setPttMode(v => !v)}
+              className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                pttMode
+                  ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
+                  : 'border-white/10 text-slate-500 hover:text-cyan-400'
+              }`}
+            >
+              PTT
+            </button>
+          </div>
         ) : (
-          <button onClick={handleStop} className="btn-stop w-full">Stop</button>
+          <div className="space-y-2">
+            {pttMode && (
+              <button
+                type="button"
+                onMouseDown={() => { setPttHeld(true); window.vb?.unmuteInput?.(); }}
+                onMouseUp={() => { setPttHeld(false); window.vb?.muteInput?.(); }}
+                onMouseLeave={() => { if (pttHeld) { setPttHeld(false); window.vb?.muteInput?.(); } }}
+                className={`w-full py-3 rounded-xl font-bold text-sm transition-all select-none ${
+                  pttHeld
+                    ? 'bg-cyan-500 text-black scale-95 shadow-lg shadow-cyan-500/30'
+                    : 'bg-white/5 border border-white/15 text-slate-400'
+                }`}
+              >
+                {pttHeld ? '🎙 Speaking…' : 'Hold to Speak  (or Space)'}
+              </button>
+            )}
+            <button onClick={handleStop} className="btn-stop w-full">Stop</button>
+          </div>
         )}
         <div className="flex gap-2">
           <button type="button" onClick={handleExportSession}

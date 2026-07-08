@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # Premium tier (paid plans) — trial uses Groq only
     openai_api_key:       str = Field('', alias='OPENAI_API_KEY')
-    openai_whisper_model: str = Field('whisper-1', alias='OPENAI_WHISPER_MODEL')
+    openai_whisper_model: str = Field('gpt-4o-mini-transcribe', alias='OPENAI_WHISPER_MODEL')
     gemini_api_key:       str = Field('', alias='GEMINI_API_KEY')
     gemini_translate_model: str = Field('gemini-2.0-flash', alias='GEMINI_TRANSLATE_MODEL')
 

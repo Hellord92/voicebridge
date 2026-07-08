@@ -1,0 +1,65 @@
+---
+description: VoiceBridge geliştirme sprint kuralları — 10 maddelik plan, test protokolü, kalite standartları
+alwaysApply: true
+---
+
+# VoiceBridge Sprint Kuralları
+
+## 10 Maddelik Geliştirme Planı
+
+| # | Görev | Durum | Kabul Kriteri |
+|---|-------|-------|---------------|
+| 1 | Cursor rule + plan | ✅ | Bu dosya |
+| 2 | 50 → 100 dil (languages.js) | ✅ | `LANGUAGES.length === 100` |
+| 3 | Website locale 50→100, <2s→<1s | ✅ | Tüm 10 locale dosyası |
+| 4 | Website page.tsx LANGS + stats | ✅ | `+76 more`, counter 100 |
+| 5 | Driver build + install (macOS) | 🔄 | `system_profiler` VoiceBridge görerek |
+| 6 | Pipeline latency < 1s testi | 🔄 | `/health` + SSE ilk chunk ≤ 1000ms |
+| 7 | Mute-while-speaking | ⬜ | TTS çalarken STT callback suspend |
+| 8 | Session end summary modal | ⬜ | Stop butonu → özet + dakika kullanımı |
+| 9 | Referral code input UI | ⬜ | Settings'te giriş alanı → `/api/referral/claim` |
+| 10 | Build smoke test | 🔄 | `npm run build` sıfır hata |
+
+## Test Protokolü
+
+Her değişiklikten sonra MUTLAKA çalıştır:
+
+```bash
+# 1. Core build (C++ addon)
+cd core && npm run build 2>&1 | tail -5
+
+# 2. App lint
+cd app && npm run lint 2>&1 | tail -10
+
+# 3. Server health
+curl -s http://127.0.0.1:8000/health | python3 -m json.tool
+
+# 4. Driver görünürlük
+system_profiler SPAudioDataType | grep -i voicebridge
+
+# 5. Gecikme ölçümü (server çalışıyorsa)
+# İlk SSE chunk zamanı ≤ 1000ms hedef
+```
+
+## Gecikme Hedefi
+
+- **Mevcut:** ~900ms (STT 300 + translate 200 + TTS 400)
+- **Hedef:** < 1000ms (streaming TTS ile ilk chunk)
+- **Ölçüm:** `X-Processing-Ms` header veya `latencyMs` SSE event
+- 1ms hedef TTS+STT+translate zinciri için fiziksel olarak mümkün değil.
+  Gerçekçi hedef: **< 1s** ilk ses chunk'ı.
+
+## Kod Kalite Kuralları
+
+- C++ PortAudio callback'te blocking işlem YASAK
+- Python async — sync `requests` YASAK, her dış çağrı `with_retry` ile
+- React hata durumu UI'da görünmeli
+- Her `try/except` loglanmalı, boş catch YASAK
+- Sessiz hata yutma YASAK
+
+## Mimari Notlar
+
+- Ana pipeline: `server/` (FastAPI) — `backend/` eski prototip, dokunma
+- Sanal mic: `drivers/macos/VoiceBridgeAudio.driver` → ShmWriter ring buffer
+- C++ ↔ Python: HTTP/SSE via `httplib.h` → `/api/pipeline/stream`
+- Dil listesi: `app/src/languages.js` — tek kaynak, website + app buradan

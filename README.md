@@ -20,19 +20,24 @@ voicebridge/
 
 ## Quick Start (Development)
 
+**macOS:** See [docs/MACOS_DEV.md](docs/MACOS_DEV.md) for full setup (Node 20, PortAudio, build order).
+
 ### 1. Build virtual mic driver (macOS)
 ```bash
+brew install portaudio cmake openssl@3
 cd drivers/macos && cmake -B build && cmake --build build
 ```
 
-### 2. Start backend server
+### 2. Build C++ core + start Electron app
 ```bash
-cd server && pip install -r requirements.txt && uvicorn main:app --port 8000
+nvm use          # Node 20 — see .nvmrc
+cd core && npm install && npm run build
+cd ../app && npm install && npm run dev
 ```
 
-### 3. Start Electron app
+### 3. Start backend server
 ```bash
-cd app && npm install && npm run dev
+cd server && pip install -r requirements.txt && uvicorn main:app --port 8000
 ```
 
 ### 4. Start website

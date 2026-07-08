@@ -2,10 +2,43 @@ import React, { useState } from 'react';
 
 const PRICING_URL = 'https://voicebridgeapps.com/pricing';
 
-export default function LicenseGate({ settings, licensed, licenseInfo, onActivate, onClose }) {
-  const [key, setKey]       = useState(settings?.licenseKey || '');
-  const [msg, setMsg]       = useState('');
-  const [loading, setLoading] = useState(false);
+export default function LicenseGate({ settings, licensed, licenseInfo, onActivate, onClose, onSignOut, serverUrl }) {
+  const [key, setKey]             = useState(settings?.licenseKey || '');
+  const [msg, setMsg]             = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [refCode, setRefCode]     = useState('');
+  const [refMsg, setRefMsg]       = useState('');
+  const [refLoading, setRefLoading] = useState(false);
+
+  const handleClaimReferral = async () => {
+    const code = refCode.trim().toUpperCase();
+    if (!code) { setRefMsg('Enter a referral code.'); return; }
+    if (!settings?.licenseKey) { setRefMsg('Activate a license key first.'); return; }
+    setRefLoading(true);
+    setRefMsg('Claiming…');
+    try {
+      const base = serverUrl || 'https://api.voicebridgeapps.com';
+      const resp = await fetch(`${base}/api/referral/claim`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${settings.licenseKey}`,
+        },
+        body: JSON.stringify({ referral_code: code }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        setRefMsg(`✓ ${data.message || 'Referral applied! Bonus minutes added.'}`);
+        setRefCode('');
+      } else {
+        setRefMsg(`✗ ${data.detail || 'Invalid or already used code'}`);
+      }
+    } catch (e) {
+      setRefMsg('✗ Network error — check server connection');
+    } finally {
+      setRefLoading(false);
+    }
+  };
 
   const handleActivate = async () => {
     if (!key.trim()) { setMsg('Enter a license key.'); return; }
@@ -112,6 +145,54 @@ export default function LicenseGate({ settings, licensed, licenseInfo, onActivat
             </div>
           </>
         )}
+        {onSignOut && (
+          <button type="button" onClick={onSignOut}
+            className="w-full mt-4 py-2 text-xs text-slate-500 hover:text-rose-400 border-t border-white/10 pt-4">
+            Sign out
+          </button>
+        )}
+        {settings?.referralCode && (
+          <div className="mt-4 pt-4 border-t border-white/10">
+            <p className="text-xs text-slate-400 mb-1">Refer a friend — they get 15 free minutes</p>
+            <p className="font-mono text-xs text-cyan-400 break-all select-all">{settings.referralCode}</p>
+            <a
+              href={`https://voicebridgeapps.com/pricing?ref=${encodeURIComponent(settings.referralCode)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="block mt-2 text-xs text-slate-500 hover:text-cyan-400 underline"
+            >
+              Share referral link
+            </a>
+          </div>
+        )}
+
+        {/* Referral code claim */}
+        <div className="mt-4 pt-4 border-t border-white/10">
+          <p className="text-xs font-semibold text-slate-400 mb-2">Have a referral code?</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={refCode}
+              onChange={e => setRefCode(e.target.value.toUpperCase())}
+              onKeyDown={e => e.key === 'Enter' && handleClaimReferral()}
+              placeholder="VBREF-XXXXXXXX"
+              maxLength={20}
+              className="flex-1 bg-slate-800 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white font-mono outline-none focus:border-cyan-400/50 placeholder:text-slate-600"
+            />
+            <button
+              onClick={handleClaimReferral}
+              disabled={refLoading}
+              className="px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 text-xs font-semibold hover:bg-cyan-500/30 border border-cyan-400/20 disabled:opacity-50 transition whitespace-nowrap"
+            >
+              {refLoading ? '…' : 'Claim'}
+            </button>
+          </div>
+          {refMsg && (
+            <p className={`text-xs mt-1.5 ${refMsg.startsWith('✓') ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {refMsg}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

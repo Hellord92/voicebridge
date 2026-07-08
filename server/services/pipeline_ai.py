@@ -1,11 +1,11 @@
 """
 Tier-based AI routing.
 
-  Free trial (5 min)  → Groq Whisper STT + Groq LLM translation
-  Paid plans          → OpenAI Whisper STT + Gemini translation
-  TTS (all tiers)     → ElevenLabs (unchanged)
-
-Falls back to Groq trial stack if premium keys are missing.
+  STT (all tiers)     → gpt-4o-mini-transcribe (if OPENAI_API_KEY set)
+                        → Groq Whisper fallback
+  Translation (trial) → Groq LLaMA
+  Translation (paid)  → Gemini (fallback: Groq)
+  TTS (all tiers)     → ElevenLabs
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import logging
 
 from config import settings
 from services.stt import transcribe as transcribe_groq
+from services.translate_groq import _is_noise_transcript
 from services.stt_openai import transcribe_openai
 from services.translate_groq import translate_groq
 from services.translate_gemini import translate_gemini
@@ -31,11 +32,15 @@ def ai_stack_for_tier(free_trial: bool) -> dict:
 
 
 async def transcribe_tiered(audio_bytes: bytes, source_lang: str, *, free_trial: bool) -> tuple[str, str]:
-    """Returns (transcript, stt_provider)."""
-    if not free_trial and settings.openai_api_key:
+    """Returns (transcript, stt_provider).
+
+    Uses gpt-4o-mini-transcribe for all tiers when OPENAI_API_KEY is set.
+    Falls back to Groq Whisper if OpenAI is unavailable.
+    """
+    if settings.openai_api_key:
         try:
             text = await transcribe_openai(audio_bytes, source_lang)
-            return text, 'openai'
+            return text, 'openai-mini'
         except Exception as e:
             log.warning('OpenAI STT failed, falling back to Groq: %s', e)
 
@@ -79,7 +84,7 @@ async def run_tiered_stt_translate(
     stack = ai_stack_for_tier(free_trial)
     stack['stt'] = stt_provider
 
-    if not transcript:
+    if not transcript or _is_noise_transcript(transcript):
         stack['translate'] = 'none'
         return '', '', stack
 
@@ -118,7 +123,7 @@ async def run_tiered_stt_translate_parallel(
     stack = ai_stack_for_tier(free_trial)
     stack['stt'] = stt_provider
 
-    if not transcript:
+    if not transcript or _is_noise_transcript(transcript):
         stack['translate'] = 'none'
         return '', '', stack
 

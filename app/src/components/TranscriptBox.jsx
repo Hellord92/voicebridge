@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function TranscriptBox({ transcript, translation, sourceLang, targetLang }) {
+export default function TranscriptBox({ transcript, translation, sourceLang, targetLang, live }) {
   if (!transcript && !translation) {
     return (
       <div className="glass-card p-4 text-center">
@@ -11,7 +11,9 @@ export default function TranscriptBox({ transcript, translation, sourceLang, tar
 
   return (
     <div className="glass-card p-4 space-y-3">
-      <p className="text-[10px] font-bold text-cyan-400/80 uppercase tracking-widest">Live</p>
+      <p className="text-[10px] font-bold text-cyan-400/80 uppercase tracking-widest">
+        {live ? 'Listening…' : 'Live'}
+      </p>
       {transcript && (
         <div className="rounded-lg bg-white/[0.03] p-3 border border-white/5">
           <span className="text-[10px] text-slate-500 uppercase tracking-wider">You said</span>

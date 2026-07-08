@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { signInWithGoogle } from '../lib/firebase.js';
+import { signInWithGoogle, firebaseConfigured } from '../lib/firebase.js';
 
 export default function SignIn({ onSignIn }) {
   const [loading, setLoading] = useState(false);
@@ -30,7 +30,7 @@ export default function SignIn({ onSignIn }) {
       <div className="titlebar-drag h-8" />
 
       <div className="flex-1 flex flex-col items-center justify-center px-6 relative z-10">
-        <img src="./assets/logo.svg" alt="VoiceBridge" className="h-8 mb-2" onError={e => { e.target.style.display = 'none'; }} />
+        <img src="./assets/logo.svg" alt="VoiceBridge" className="h-14 w-14 mb-3" onError={e => { e.target.style.display = 'none'; }} />
         <div className="text-2xl font-extrabold tracking-tight mb-1">
           <span className="text-white">Voice</span><span className="text-cyan-400">Bridge</span>
         </div>
@@ -42,9 +42,15 @@ export default function SignIn({ onSignIn }) {
             Sync your license and free trial across devices.
           </p>
 
+          {!firebaseConfigured() && (
+            <p className="text-xs text-amber-400/90 text-center bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+              Firebase keys missing — copy <code className="text-amber-200">app/.env.example</code> to <code className="text-amber-200">app/.env.local</code> or use a license key below.
+            </p>
+          )}
+
           <button
             onClick={handleGoogle}
-            disabled={loading}
+            disabled={loading || !firebaseConfigured()}
             className="w-full flex items-center justify-center gap-3 bg-white text-slate-900 font-semibold py-3 rounded-xl hover:bg-slate-100 active:scale-95 transition-all disabled:opacity-50"
           >
             <GoogleIcon />
@@ -55,7 +61,7 @@ export default function SignIn({ onSignIn }) {
 
           <div className="border-t border-white/10 pt-3">
             <button
-              onClick={() => onSignIn(null, null)}
+              onClick={() => onSignIn({ uid: '__manual__' }, null)}
               className="w-full text-xs text-slate-500 hover:text-cyan-400 py-1.5 transition"
             >
               Enter license key manually →

@@ -128,6 +128,7 @@ struct AudioPipeline::Impl {
     PhraseDetector  *detector   = nullptr;
     std::atomic<bool> running         {false};
     std::atomic<bool> ttsPlaying      {false}; /* mute-while-speaking gate */
+    std::atomic<bool> inputMuted      {false}; /* push-to-talk gate */
     std::mutex        langMutex;
     std::string       sourceLang;
     std::string       targetLang;
@@ -157,6 +158,8 @@ struct AudioPipeline::Impl {
     /* Called on PortAudio IO thread — just queue audio */
     static void captureCallback(const float *frames, uint32_t count, void *ud) {
         auto *self = static_cast<Impl *>(ud);
+        /* Drop audio when input is muted (push-to-talk gate) */
+        if (self->inputMuted.load()) return;
         self->detector->push(frames, count);
     }
 
@@ -378,7 +381,10 @@ struct AudioPipeline::Impl {
         auto pcm48 = resample441to48(pcmOut);
         normalizePCM(pcm48);
 
-        /* Mute-while-speaking: block new phrases while TTS audio is writing */
+        /* Write TTS audio to virtual mic ring buffer.
+         * Gate closes only for the duration of the write (~1ms), not playback.
+         * TTS goes to Google Meet's virtual mic — not the user's speakers —
+         * so there is no acoustic echo loop to worry about. */
         ttsPlaying.store(true);
 #ifdef __APPLE__
         vb_shm_write(pcm48.data(), (uint32_t)pcm48.size());
@@ -417,9 +423,10 @@ int AudioPipeline::start()
 
     PhraseConfig pc;
     pc.sampleRate        = mImpl->cfg.sampleRate;
-    pc.minPhraseFrames   = (uint32_t)(0.200 * pc.sampleRate);  /* 200 ms — avoid very short noise bursts */
-    pc.silenceFrames     = (uint32_t)(0.500 * pc.sampleRate);  /* 500 ms — natural pause threshold */
-    pc.vadAggressiveness = 2;                                   /* 2 = balanced (less noise triggering) */
+    pc.minPhraseFrames   = (uint32_t)(0.300 * pc.sampleRate);  /* 300 ms minimum */
+    pc.silenceFrames     = (uint32_t)(0.600 * pc.sampleRate);  /* 600 ms pause — tolerates reading pace */
+    pc.maxPhraseFrames   = (uint32_t)(5.0   * pc.sampleRate);  /* 5 s force-flush */
+    pc.vadAggressiveness = 2;                                   /* 2 = balanced */
     mImpl->detector = new PhraseDetector(pc);
     mImpl->detector->setCallback([this](const float *pcm, uint32_t frames){
         mImpl->onPhrase(pcm, frames);
@@ -492,3 +499,6 @@ void AudioPipeline::setVoiceGender(const std::string &gender)
     std::lock_guard<std::mutex> lk(mImpl->langMutex);
     mImpl->voiceGender = gender;
 }
+
+void AudioPipeline::muteInput()   { mImpl->inputMuted.store(true);  }
+void AudioPipeline::unmuteInput() { mImpl->inputMuted.store(false); }

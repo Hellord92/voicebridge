@@ -44,3 +44,6 @@ _archive/
 website/.env.local
 *.db
 server/voicebridge.db
+
+# Apple signing secrets
+.env.codesign
