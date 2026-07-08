@@ -63,6 +63,15 @@ static void normalizePCM(std::vector<float> &pcm)
     for (float &s : pcm) s = std::clamp(s * gain, -1.f, 1.f);
 }
 
+/* Returns RMS energy in range [0,1]. Noise/silence is typically < 0.01 */
+static float computeRMS(const std::vector<float> &pcm)
+{
+    if (pcm.empty()) return 0.f;
+    double sum = 0.0;
+    for (float s : pcm) sum += (double)s * s;
+    return (float)std::sqrt(sum / pcm.size());
+}
+
 /* Simple 44100 → 48000 linear resample for TTS output */
 static std::vector<float> resample441to48(const std::vector<float> &in)
 {
@@ -156,6 +165,15 @@ struct AudioPipeline::Impl {
         /* Drop phrase while TTS is playing to prevent echo feedback loop */
         if (ttsPlaying.load()) return;
         std::vector<float> copy(pcm, pcm + frames);
+
+        /* Energy gate: skip silence/noise before normalization amplifies it.
+         * Raw RMS < 0.005 = very quiet, likely background noise, not speech. */
+        float rawRms = computeRMS(copy);
+        if (rawRms < 0.005f) {
+            log("debug", "Skipped low-energy phrase (RMS=" + std::to_string(rawRms) + ")");
+            return;
+        }
+
         normalizePCM(copy);
         {
             std::lock_guard<std::mutex> lk(workMutex);
@@ -399,9 +417,9 @@ int AudioPipeline::start()
 
     PhraseConfig pc;
     pc.sampleRate        = mImpl->cfg.sampleRate;
-    pc.minPhraseFrames   = (uint32_t)(0.060 * pc.sampleRate);  /* 60 ms  — catch short phrases */
-    pc.silenceFrames     = (uint32_t)(0.400 * pc.sampleRate);  /* 400 ms — wait longer for natural pause */
-    pc.vadAggressiveness = 1;                                   /* 1 = more sensitive than default 2 */
+    pc.minPhraseFrames   = (uint32_t)(0.200 * pc.sampleRate);  /* 200 ms — avoid very short noise bursts */
+    pc.silenceFrames     = (uint32_t)(0.500 * pc.sampleRate);  /* 500 ms — natural pause threshold */
+    pc.vadAggressiveness = 2;                                   /* 2 = balanced (less noise triggering) */
     mImpl->detector = new PhraseDetector(pc);
     mImpl->detector->setCallback([this](const float *pcm, uint32_t frames){
         mImpl->onPhrase(pcm, frames);

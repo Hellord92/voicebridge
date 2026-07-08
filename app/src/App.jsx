@@ -612,7 +612,7 @@ export default function App() {
         <div className="flex-shrink-0 max-h-[38vh] overflow-y-auto px-5 space-y-3 py-2 border-b border-white/5">
           {showPlatform && <PlatformGuide />}
           <DeviceSelector
-            selectedDeviceId={settings.inputDeviceId || 'default'}
+            selectedDeviceIndex={settings.inputDeviceIndex ?? -1}
             selectedOutputDeviceId={settings.outputDeviceId || ''}
             driverInstalled={driverInstalled}
             micVisible={micVisible}

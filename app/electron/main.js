@@ -359,6 +359,7 @@ ipcMain.handle('get-settings', async () => ({
   targetLang:        store.get('targetLang', 'en'),
   voiceGender:       store.get('voiceGender', 'female'),
   inputDeviceIndex:  store.get('inputDeviceIndex', -1),
+  inputDeviceName:   store.get('inputDeviceName', ''),
   outputDeviceIndex: store.get('outputDeviceIndex', -1),
   monitorEnabled:    store.get('monitorEnabled', false),
   onboardingDone:    store.get('onboardingDone', false),
