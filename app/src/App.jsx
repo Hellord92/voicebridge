@@ -68,7 +68,9 @@ export default function App() {
 
   const handleStop = useCallback(async () => {
     try { await window.vb?.stopPipeline?.(); } catch (_) {}
-    try { await window.vb?.stopRealtime?.(); } catch (_) {}
+    if (realtimeMode) {
+      try { await window.vb?.stopRealtime?.(); } catch (_) {}
+    }
     setRunning(false);
     setTrialActive(false);
     setStatus('idle');

@@ -14,6 +14,7 @@ static std::unique_ptr<AudioPipeline> gPipeline;
 static VBAudioCapture          *gRawCapture    = nullptr;
 static Napi::ThreadSafeFunction gRawTsfn;
 static std::atomic<bool>        gRawRunning    {false};
+static std::atomic<bool>        gRawTsfnInit   {false}; /* guards Release() calls */
 
 /* Accumulate ~100ms of audio (48kHz × 0.1s = 4800 frames) */
 static std::vector<float>       gRawAccum;
@@ -75,6 +76,7 @@ Napi::Value StartRawStream(const Napi::CallbackInfo &info)
 
     auto fn = opts.Get("onAudio").As<Napi::Function>();
     gRawTsfn = Napi::ThreadSafeFunction::New(env, fn, "rawAudio", 0, 1);
+    gRawTsfnInit.store(true);
     gRawAccum.clear();
     gRawAccum.reserve(RAW_CHUNK_FRAMES * 2);
     gRawRunning.store(true);
@@ -104,7 +106,11 @@ Napi::Value StopRawStream(const Napi::CallbackInfo &info)
         gRawCapture = nullptr;
     }
     gRawAccum.clear();
-    gRawTsfn.Release();
+    /* Only release TSFN if it was actually initialized — prevents crash on
+     * StopRawStream calls when Realtime mode was never started. */
+    if (gRawTsfnInit.exchange(false)) {
+        gRawTsfn.Release();
+    }
     return info.Env().Undefined();
 }
 
