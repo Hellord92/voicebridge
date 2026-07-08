@@ -467,6 +467,29 @@ ipcMain.handle('refresh-devices', async () => {
 ipcMain.handle('start-pipeline', async (_e, opts) => {
   if (!core) return { ok: false, error: 'Audio engine could not be loaded. Please reinstall VoiceBridge.' };
 
+  /* Refresh license key from server — fixes stale keys after DB migration / trial reset */
+  try {
+    const user = store.get('firebaseUser');
+    if (user?.idToken) {
+      const serverUrl = getServerUrl();
+      const acct = await httpPost(`${serverUrl}/api/auth/me`, null, {
+        Authorization: `Bearer ${user.idToken}`,
+      });
+      if (acct.ok && acct.data?.license?.key) {
+        opts.licenseKey = acct.data.license.key;
+        store.set('licenseKey', acct.data.license.key);
+        console.log('[main] License refreshed before pipeline:', acct.data.license.key);
+      } else {
+        console.warn('[main] License refresh failed:', acct.status, acct.data?.detail || acct.error);
+      }
+    }
+  } catch (e) {
+    console.warn('[main] License refresh error:', e.message);
+  }
+  if (!opts.licenseKey) {
+    return { ok: false, error: 'No license key — sign out and sign in again.' };
+  }
+
   /* Request microphone permission on macOS before touching audio */
   if (process.platform === 'darwin') {
     const micStatus = systemPreferences.getMediaAccessStatus('microphone');

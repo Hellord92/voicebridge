@@ -210,8 +210,11 @@ async def auth_me(request: Request, db: AsyncSession = Depends(get_db)):
     minutes_left = active_lic.minutes_total - active_lic.minutes_used
     trial_left = None
     if active_lic.plan_id == 'free':
-        used = await free_trial_seconds_used(db, active_lic.key)
-        trial_left = max(0, FREE_TRIAL_SECONDS - used)
+        if settings.dev_unlimited_trial:
+            trial_left = FREE_TRIAL_SECONDS
+        else:
+            used = await free_trial_seconds_used(db, active_lic.key)
+            trial_left = max(0, FREE_TRIAL_SECONDS - used)
 
     return {
         'uid':           uid,
