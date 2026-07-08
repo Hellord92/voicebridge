@@ -109,13 +109,202 @@ export default function HomePage() {
     <main className="min-h-screen overflow-x-hidden bg-[#0a0a0f] text-white">
       <Hero t={t} />
       <Stats t={t} />
+      <BusinessStats />
       <HowItWorks t={t} />
       <UseCases />
+      <NoInterpreterNeeded />
       <Features t={t} />
       <Languages t={t} />
       <PricingTeaser t={t} />
       <CtaBanner t={t} />
     </main>
+  );
+}
+
+/* ── Business Stats (KUDO-style) ──────────────────────────────────────────── */
+const BIZ_STATS = [
+  {
+    value: '59%',
+    label: 'of employees working in another language worry about missing information',
+    source: 'Foreign Language Anxiety Study, 2022',
+    icon: '😟',
+    color: 'from-rose-500 to-pink-600',
+    glow: 'rgba(244,63,94,0.15)',
+  },
+  {
+    value: '80%',
+    label: 'of workers are more productive when spoken to in their native language',
+    source: 'Forbes Insights / Rosetta Stone Survey',
+    icon: '⚡',
+    color: 'from-amber-500 to-orange-500',
+    glow: 'rgba(245,158,11,0.15)',
+  },
+  {
+    value: '25%',
+    label: 'of companies lose business opportunities due to language barriers',
+    source: 'American Council on the Teaching of Foreign Languages',
+    icon: '📉',
+    color: 'from-cyan-500 to-blue-600',
+    glow: 'rgba(0,200,255,0.15)',
+  },
+];
+
+function BusinessStats() {
+  return (
+    <section className="py-24 px-6 relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 -z-10"
+        style={{ background: 'radial-gradient(ellipse 60% 40% at 50% 50%, rgba(0,200,255,0.04) 0%, transparent 70%)' }} />
+      <div className="max-w-5xl mx-auto">
+        <FadeUp className="text-center mb-14">
+          <span className="inline-block text-xs font-bold tracking-widest uppercase mb-4 px-3 py-1 rounded-full"
+            style={{ background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', color: '#67e8f9' }}>
+            Why it matters
+          </span>
+          <h2 className="text-4xl md:text-5xl font-extrabold mb-4 text-white">
+            Language barriers cost businesses{' '}
+            <span style={{ background: 'linear-gradient(90deg,#f43f5e,#f97316)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              every day
+            </span>
+          </h2>
+          <p className="text-slate-400 text-lg max-w-2xl mx-auto">
+            VoiceBridge eliminates the barrier — no interpreter fees, no scheduling, no delays.
+          </p>
+        </FadeUp>
+        <div className="grid md:grid-cols-3 gap-6">
+          {BIZ_STATS.map((s, i) => (
+            <FadeUp key={i} delay={i * 0.12}>
+              <TiltCard glowColor={s.glow} lift
+                className="group relative rounded-2xl p-8 h-full flex flex-col"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(8px)' }}>
+                <div className={`absolute inset-0 bg-gradient-to-br ${s.color} opacity-0 group-hover:opacity-[0.05] transition-opacity duration-500 rounded-2xl`} />
+                <div className="text-4xl mb-4">{s.icon}</div>
+                <div className={`text-5xl font-black mb-3 bg-gradient-to-r ${s.color} bg-clip-text text-transparent`}>
+                  {s.value}
+                </div>
+                <p className="text-slate-300 text-sm leading-relaxed flex-1">{s.label}</p>
+                <p className="text-slate-600 text-[10px] mt-4 italic">*{s.source}</p>
+              </TiltCard>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── No Interpreter Needed ────────────────────────────────────────────────── */
+const COMPARISON = [
+  { label: 'Cost',          human: '$150–$500/hour',  ai: 'From $0.99',        winner: 'ai' },
+  { label: 'Availability',  human: 'Schedule in advance', ai: '24/7 instant',  winner: 'ai' },
+  { label: 'Languages',     human: '1–3 specialties', ai: '100+ languages',    winner: 'ai' },
+  { label: 'Latency',       human: '2–5s relay',      ai: '< 1 second',        winner: 'ai' },
+  { label: 'Setup',         human: 'Days of planning', ai: 'Download & go',    winner: 'ai' },
+  { label: 'Privacy',       human: 'Third party present', ai: 'On-device audio', winner: 'ai' },
+];
+
+function NoInterpreterNeeded() {
+  return (
+    <section className="py-32 px-6 relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[600px] rounded-full blur-[140px]"
+          style={{ background: 'radial-gradient(ellipse, rgba(124,58,237,0.07) 0%, transparent 70%)' }} />
+      </div>
+      <div className="max-w-5xl mx-auto">
+        <FadeUp className="text-center mb-16">
+          <span className="inline-block text-xs font-bold tracking-widest uppercase mb-4 px-3 py-1 rounded-full"
+            style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa' }}>
+            AI vs Human Interpreter
+          </span>
+          <h2 className="text-4xl md:text-6xl font-extrabold mb-4">
+            No interpreter{' '}
+            <span style={{ background: 'linear-gradient(90deg,#00c8ff,#7c3aed)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              needed.
+            </span>
+          </h2>
+          <p className="text-slate-400 text-xl max-w-2xl mx-auto">
+            VoiceBridge replaces expensive human interpreters with real-time AI — available instantly, in 100+ languages, at a fraction of the cost.
+          </p>
+        </FadeUp>
+
+        <div className="grid md:grid-cols-2 gap-6 mb-12">
+          {/* Human interpreter card */}
+          <FadeUp delay={0}>
+            <div className="rounded-2xl p-8 h-full"
+              style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center text-2xl">👤</div>
+                <div>
+                  <h3 className="font-bold text-white text-lg">Human Interpreter</h3>
+                  <p className="text-slate-500 text-sm">Traditional approach</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {COMPARISON.map(c => (
+                  <div key={c.label} className="flex items-center justify-between py-2 border-b border-white/[0.05]">
+                    <span className="text-slate-500 text-sm">{c.label}</span>
+                    <span className="text-slate-400 text-sm">{c.human}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </FadeUp>
+
+          {/* VoiceBridge card */}
+          <FadeUp delay={0.1}>
+            <TiltCard glowColor="rgba(0,200,255,0.15)" lift
+              className="rounded-2xl p-8 h-full relative overflow-hidden"
+              style={{ background: 'rgba(0,200,255,0.04)', border: '1px solid rgba(0,200,255,0.2)' }}>
+              <div className="absolute top-0 left-0 right-0 h-px"
+                style={{ background: 'linear-gradient(90deg, transparent, rgba(0,200,255,0.5), transparent)' }} />
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                  style={{ background: 'linear-gradient(135deg,#00c8ff,#7c3aed)' }}>⚡</div>
+                <div>
+                  <h3 className="font-bold text-white text-lg">VoiceBridge AI</h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    style={{ background: 'rgba(0,200,255,0.15)', color: '#00c8ff', border: '1px solid rgba(0,200,255,0.3)' }}>
+                    RECOMMENDED
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {COMPARISON.map(c => (
+                  <div key={c.label} className="flex items-center justify-between py-2 border-b border-cyan-500/10">
+                    <span className="text-slate-400 text-sm">{c.label}</span>
+                    <span className="text-sm font-semibold flex items-center gap-1.5" style={{ color: '#00c8ff' }}>
+                      <span className="text-emerald-400 text-xs">✓</span>{c.ai}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </TiltCard>
+          </FadeUp>
+        </div>
+
+        {/* Trust banner */}
+        <FadeUp delay={0.2}>
+          <div className="rounded-2xl p-8 text-center relative overflow-hidden"
+            style={{ background: 'linear-gradient(135deg, rgba(0,200,255,0.06), rgba(124,58,237,0.06))', border: '1px solid rgba(0,200,255,0.15)' }}>
+            <div className="absolute top-0 left-0 right-0 h-px"
+              style={{ background: 'linear-gradient(90deg, transparent, rgba(0,200,255,0.4), rgba(124,58,237,0.4), transparent)' }} />
+            <p className="text-2xl font-extrabold text-white mb-2">
+              Professional-grade AI interpretation — available 24/7
+            </p>
+            <p className="text-slate-400 mb-6 max-w-xl mx-auto">
+              Trusted for business meetings, corporate training, customer support, and global events. Works with Zoom, Teams, Google Meet, and any audio platform.
+            </p>
+            <div className="flex flex-wrap justify-center gap-4 text-sm text-slate-400">
+              {['Zoom', 'Google Meet', 'Microsoft Teams', 'Webex', 'Any Platform'].map(p => (
+                <span key={p} className="px-3 py-1 rounded-full"
+                  style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  {p}
+                </span>
+              ))}
+            </div>
+          </div>
+        </FadeUp>
+      </div>
+    </section>
   );
 }
 
@@ -193,8 +382,8 @@ function Hero({ t }: { t: ReturnType<typeof useTranslations> }) {
             transition={{ delay: 0.9, duration: 0.6 }}
             className="flex flex-wrap gap-6 justify-center lg:justify-start">
             {[
-              { value: 50,   suffix: '+', label: 'Languages' },
-              { value: 2,    prefix: '<', suffix: 's', label: 'Latency' },
+              { value: 100,  suffix: '+', label: 'Languages' },
+              { value: 1,    prefix: '<', suffix: 's', label: 'Latency' },
               { value: 99.9, suffix: '%', label: 'Uptime' },
             ].map((s) => (
               <StatCounter key={s.label} {...s} />
@@ -509,6 +698,16 @@ const USE_CASES = [
     stat: { value: '25%', label: 'of businesses lose customers to language barriers' },
     color: 'from-emerald-500 to-teal-600',
     glow: 'rgba(16,185,129,0.12)',
+  },
+  {
+    emoji: '🏢',
+    title: 'Corporate Training',
+    subtitle: 'Train global teams instantly',
+    desc: 'Deliver corporate training, onboarding sessions, and company-wide announcements to international teams — no scheduling interpreters, no delays.',
+    tags: ['Zoom', 'Teams', 'Live Events'],
+    stat: { value: '3×', label: 'faster global rollout when training is delivered in native language' },
+    color: 'from-amber-500 to-orange-600',
+    glow: 'rgba(245,158,11,0.12)',
   },
 ];
 
