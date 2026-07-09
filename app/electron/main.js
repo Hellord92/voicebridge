@@ -55,18 +55,26 @@ function startProdServer() {
   });
 }
 
+const PROD_API = 'https://api.voicebridgeapps.com';
+
 function getServerUrl() {
   const stored = store.get('serverUrl');
+  /* Reject website / vite dev URLs mistakenly saved as API base */
+  if (stored && (
+    (stored.includes('voicebridgeapps.com') && !stored.includes('api.')) ||
+    stored.includes(':5173')
+  )) {
+    console.warn('[main] Invalid serverUrl in store, using production API:', stored);
+    return PROD_API;
+  }
   if (isDev) {
-    if (!stored || stored === 'https://api.voicebridgeapps.com') {
-      return 'http://127.0.0.1:8000';
-    }
+    /* Dev builds talk to production API unless user set a custom backend */
+    if (!stored || stored === PROD_API) return PROD_API;
     return stored;
   }
-  /* In production, never use a localhost URL saved from dev sessions */
   const isLocal = stored && (stored.includes('127.0.0.1') || stored.includes('localhost'));
   if (stored && !isLocal) return stored;
-  return 'https://api.voicebridgeapps.com';
+  return PROD_API;
 }
 
 const DRIVER_DEST = '/Library/Audio/Plug-Ins/HAL/VoiceBridgeAudio.driver';
@@ -151,7 +159,15 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (core) core.stopPipeline();
+  realtimeActive = false;
+  if (core) {
+    try { core.stopRawStream(); } catch (e) { console.warn('[main] stopRawStream on quit:', e.message); }
+    try { core.stopPipeline(); } catch (e) { console.warn('[main] stopPipeline on quit:', e.message); }
+  }
+  if (realtimeWs) {
+    try { realtimeWs.close(); } catch (e) { console.warn('[main] WS close on quit:', e.message); }
+    realtimeWs = null;
+  }
   if (process.platform !== 'darwin') app.quit();
 });
 
@@ -368,53 +384,7 @@ ipcMain.handle('get-settings', async () => ({
   referralCode:      store.get('referralCode', ''),
 }));
 
-ipcMain.handle('get-stored-user', async () => {
-  const user = store.get('firebaseUser', null);
-  if (!user) return null;
-
-  const needsRefresh = !user.tokenExpiry || Date.now() > user.tokenExpiry - 120_000;
-  if (!needsRefresh) return user;
-
-  /* Token expired / close to expiry — refresh via Firebase REST API */
-  if (user.refreshToken && user.firebaseApiKey) {
-    try {
-      const refreshUrl = `https://securetoken.googleapis.com/v1/token?key=${user.firebaseApiKey}`;
-      const refreshResult = await httpPost(refreshUrl, {
-        grant_type:    'refresh_token',
-        refresh_token: user.refreshToken,
-      });
-
-      if (refreshResult.ok && refreshResult.data?.id_token) {
-        const newToken    = refreshResult.data.id_token;
-        const newRefresh  = refreshResult.data.refresh_token || user.refreshToken;
-
-        user.idToken      = newToken;
-        user.refreshToken = newRefresh;
-        user.tokenExpiry  = Date.now() + 3500 * 1000;
-        console.log('[main] Firebase token refreshed successfully');
-
-        /* Re-sync account + license from server */
-        const serverUrl   = getServerUrl();
-        const acctResp    = await httpPost(`${serverUrl}/api/auth/me`, null, {
-          Authorization: `Bearer ${newToken}`,
-        });
-        if (acctResp.ok && acctResp.data?.license?.key) {
-          user.account = acctResp.data;
-          store.set('licenseKey', acctResp.data.license.key);
-          console.log('[main] License synced:', acctResp.data.license.key);
-        } else {
-          console.warn('[main] Account sync failed:', acctResp.status, acctResp.data?.detail);
-        }
-
-        store.set('firebaseUser', user);
-      }
-    } catch (e) {
-      console.warn('[main] Token refresh error:', e.message);
-    }
-  }
-
-  return user;
-});
+ipcMain.handle('get-stored-user', async () => refreshStoredUser());
 
 ipcMain.handle('save-firebase-user', async (_e, userData) => {
   store.set('firebaseUser', userData);
@@ -450,7 +420,7 @@ ipcMain.handle('save-settings', async (_e, settings) => {
 });
 
 ipcMain.handle('list-devices', async () => {
-  if (!core) return ['Default Microphone'];
+  if (!core) return [{ index: -1, name: 'Default Microphone' }];
   return core.listInputDevices();
 });
 
@@ -466,6 +436,8 @@ ipcMain.handle('refresh-devices', async () => {
 
 ipcMain.handle('start-pipeline', async (_e, opts) => {
   if (!core) return { ok: false, error: 'Audio engine could not be loaded. Please reinstall VoiceBridge.' };
+  /* Stop any existing pipeline before starting a new one to prevent double PortAudio streams */
+  try { core.stopPipeline(); } catch (_) {}
 
   /* Use stored license key — always take from store, opts.licenseKey is just a hint */
   const storedKey = store.get('licenseKey', '');
@@ -553,45 +525,201 @@ ipcMain.handle('unmute-input', () => {
   return { ok: true };
 });
 
+function httpPostBinary(url, body, extraHeaders = {}) {
+  return new Promise((resolve) => {
+    const parsed  = new URL(url);
+    const bodyStr = body ? JSON.stringify(body) : '';
+    const headers = {
+      'Content-Type':   'application/json',
+      'Content-Length': Buffer.byteLength(bodyStr),
+      ...extraHeaders,
+    };
+    const mod = parsed.protocol === 'https:' ? https : require('http');
+    const req = mod.request(
+      { hostname: parsed.hostname, port: parsed.port || undefined, path: parsed.pathname + (parsed.search || ''), method: 'POST', headers },
+      (res) => {
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          resolve({
+            ok: res.statusCode >= 200 && res.statusCode < 300,
+            status: res.statusCode,
+            body: buf,
+            processingMs: res.headers['x-processing-ms'] ? parseInt(res.headers['x-processing-ms'], 10) : null,
+          });
+        });
+      }
+    );
+    req.on('error', e => resolve({ ok: false, error: e.message, body: Buffer.alloc(0) }));
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
 /* ── OpenAI Realtime WebSocket Pipeline ────────────────────────────────────── */
-let realtimeWs     = null;
-let realtimeActive = false;
+let realtimeWs      = null;
+let realtimeActive  = false;
+let realtimeOpts    = null;
+let phraseStartMs   = 0;
+const ttsQueue      = [];
+let ttsBusy         = false;
+
+async function refreshStoredUser() {
+  const user = store.get('firebaseUser', null);
+  if (!user) return null;
+
+  const needsRefresh = !user.tokenExpiry || Date.now() > user.tokenExpiry - 120_000;
+  if (!needsRefresh) return user;
+
+  if (user.refreshToken && user.firebaseApiKey) {
+    try {
+      const refreshUrl = `https://securetoken.googleapis.com/v1/token?key=${user.firebaseApiKey}`;
+      const refreshResult = await httpPost(refreshUrl, {
+        grant_type:    'refresh_token',
+        refresh_token: user.refreshToken,
+      });
+      if (refreshResult.ok && refreshResult.data?.id_token) {
+        user.idToken      = refreshResult.data.id_token;
+        user.refreshToken = refreshResult.data.refresh_token || user.refreshToken;
+        user.tokenExpiry  = Date.now() + 3500 * 1000;
+        const serverUrl   = getServerUrl();
+        const acctResp    = await httpPost(`${serverUrl}/api/auth/me`, null, {
+          Authorization: `Bearer ${user.idToken}`,
+        });
+        if (acctResp.ok && acctResp.data?.license?.key) {
+          user.account = acctResp.data;
+          store.set('licenseKey', acctResp.data.license.key);
+        }
+        store.set('firebaseUser', user);
+      }
+    } catch (e) {
+      console.warn('[main] Token refresh error:', e.message);
+    }
+  }
+  return user;
+}
+
+function realtimeAuthHeaders() {
+  const stored     = store.get('firebaseUser') || {};
+  const licenseKey = store.get('licenseKey') || '';
+  const idToken    = stored.idToken || '';
+  if (idToken) return { Authorization: `Bearer ${idToken}` };
+  if (licenseKey) return { Authorization: `Bearer ${licenseKey}` };
+  return {};
+}
+
+async function drainTtsQueue() {
+  if (ttsBusy) return;
+  ttsBusy = true;
+  while (ttsQueue.length > 0) {
+    const job = ttsQueue.shift();
+    await playTranslationTts(job.text, job.opts, job.startedAt);
+  }
+  ttsBusy = false;
+}
+
+function enqueueTranslationTts(text, opts, startedAt) {
+  const trimmed = (text || '').trim();
+  if (!trimmed || trimmed.length <= 1) return;
+  ttsQueue.push({ text: trimmed, opts, startedAt });
+  drainTtsQueue().catch(err => {
+    console.error('[main] TTS queue error:', err.message);
+    if (win) win.webContents.send('error', `TTS error: ${err.message}`);
+  });
+}
+
+async function playTranslationTts(text, opts, startedAt) {
+  const serverUrl = getServerUrl();
+  try {
+    if (core?.muteInput) core.muteInput();
+    const ttsRes = await httpPostBinary(
+      `${serverUrl}/api/tts`,
+      {
+        text,
+        target_lang: opts.targetLang || 'en',
+        voice_gender: opts.voiceGender || 'female',
+      },
+      realtimeAuthHeaders(),
+    );
+    if (!ttsRes.ok || !ttsRes.body?.length) {
+      const errMsg = ttsRes.error || `TTS HTTP ${ttsRes.status || 0}`;
+      console.warn('[main] TTS failed:', errMsg);
+      if (win) win.webContents.send('error', `ElevenLabs TTS failed (${errMsg})`);
+      return;
+    }
+    if (core?.playMp3ToShm) {
+      const frames = core.playMp3ToShm(ttsRes.body);
+      if (frames < 0) {
+        console.warn('[main] playMp3ToShm failed:', frames);
+        if (win) win.webContents.send('error', 'Virtual mic write failed');
+        return;
+      }
+    }
+    const latency = Date.now() - (startedAt || phraseStartMs || Date.now());
+    if (win) win.webContents.send('latency', latency);
+  } catch (e) {
+    console.error('[main] playTranslationTts:', e.message);
+    if (win) win.webContents.send('error', `TTS error: ${e.message}`);
+  } finally {
+    if (core?.unmuteInput) core.unmuteInput();
+  }
+}
 
 ipcMain.handle('start-realtime', async (_e, opts) => {
   if (realtimeActive) return { ok: false, error: 'Already running' };
 
-  const serverUrl  = getServerUrl();
-  const stored     = store.get('user') || {};
-  const licenseKey = store.get('licenseKey') || '';
-  const idToken    = stored.idToken || '';
+  await refreshStoredUser();
 
-  /* 1. Get ephemeral session token from our server */
+  const serverUrl  = getServerUrl();
+  const authHdrs   = realtimeAuthHeaders();
+  if (!authHdrs.Authorization) {
+    return { ok: false, error: 'Not signed in — log out and sign in again.' };
+  }
+
+  realtimeOpts = {
+    inputDeviceIndex: opts.inputDeviceIndex ?? -1,
+    sourceLang:       opts.sourceLang || 'auto',
+    targetLang:       opts.targetLang || 'en',
+    voiceGender:      opts.voiceGender || 'female',
+  };
+
   const sessionRes = await httpPost(
     `${serverUrl}/api/realtime/session`,
-    { source_lang: opts.sourceLang || 'auto', target_lang: opts.targetLang || 'en', voice: 'alloy' },
-    idToken ? { Authorization: `Bearer ${idToken}` } : { 'X-License-Key': licenseKey }
+    {
+      source_lang: realtimeOpts.sourceLang,
+      target_lang: realtimeOpts.targetLang,
+      voice:       'alloy',
+    },
+    authHdrs,
   );
-  if (!sessionRes.ok) return { ok: false, error: sessionRes.error || 'Session error' };
+  if (!sessionRes.ok) {
+    const msg = sessionRes.data?.detail || sessionRes.error || `Session error (HTTP ${sessionRes.status || 0})`;
+    console.warn('[main] realtime/session failed:', sessionRes.status, msg);
+    return { ok: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) };
+  }
 
-  const { client_secret } = sessionRes.data || sessionRes;
+  const { client_secret } = sessionRes.data || {};
   if (!client_secret) return { ok: false, error: 'No session token returned' };
 
-  /* 2. Open WebSocket to OpenAI Realtime */
+  if (core?.openVirtualMic) {
+    const shmRc = core.openVirtualMic();
+    if (shmRc !== 0) console.warn('[main] openVirtualMic returned', shmRc);
+  }
+
   const WebSocket = require('ws');
   const ws = new WebSocket(
-    'wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview',
+    'wss://api.openai.com/v1/realtime?model=gpt-realtime-mini',
     { headers: {
         Authorization: `Bearer ${client_secret}`,
-        'OpenAI-Beta': 'realtime=v1',
     }}
   );
 
   ws.on('open', () => {
     realtimeActive = true;
-    /* Start raw audio stream from mic */
     if (core) {
       core.startRawStream({
-        inputDeviceIndex: opts.inputDeviceIndex ?? -1,
+        inputDeviceIndex: realtimeOpts.inputDeviceIndex,
         onAudio: (pcm16Buffer) => {
           if (!realtimeActive || ws.readyState !== 1) return;
           const b64 = pcm16Buffer.toString('base64');
@@ -607,7 +735,10 @@ ipcMain.handle('start-realtime', async (_e, opts) => {
     try { ev = JSON.parse(raw); } catch { return; }
 
     switch (ev.type) {
-      /* Streaming transcript (speech-to-text) */
+      case 'input_audio_buffer.speech_started':
+        phraseStartMs = Date.now();
+        break;
+
       case 'conversation.item.input_audio_transcription.delta':
         if (win && ev.delta) win.webContents.send('partial-transcript', ev.delta);
         break;
@@ -616,14 +747,34 @@ ipcMain.handle('start-realtime', async (_e, opts) => {
         if (win && ev.transcript) win.webContents.send('transcript', ev.transcript);
         break;
 
-      /* Streaming translation text */
       case 'response.text.delta':
+      case 'response.output_text.delta':
         if (win && ev.delta) win.webContents.send('realtime-translation-delta', ev.delta);
         break;
 
       case 'response.text.done':
-        if (win && ev.text) win.webContents.send('translation', ev.text);
+      case 'response.output_text.done':
+        if (win && ev.text) {
+          win.webContents.send('translation', ev.text);
+          enqueueTranslationTts(ev.text, realtimeOpts, phraseStartMs || Date.now());
+        }
         break;
+
+      case 'response.done': {
+        /* GA: translation may arrive inside response.output */
+        const parts = ev.response?.output || [];
+        for (const part of parts) {
+          if (part.type === 'message' && Array.isArray(part.content)) {
+            for (const c of part.content) {
+              if (c.type === 'output_text' && c.text) {
+                win.webContents.send('translation', c.text);
+                enqueueTranslationTts(c.text, realtimeOpts, phraseStartMs || Date.now());
+              }
+            }
+          }
+        }
+        break;
+      }
 
       case 'error':
         if (win) win.webContents.send('error', ev.error?.message || 'Realtime error');
@@ -633,11 +784,13 @@ ipcMain.handle('start-realtime', async (_e, opts) => {
 
   ws.on('close', () => {
     realtimeActive = false;
-    try { if (core) core.stopRawStream(); } catch (_) {}
+    ttsQueue.length = 0;
+    try { if (core) core.stopRawStream(); } catch (e) { console.warn('[main] stopRawStream:', e.message); }
     if (win) win.webContents.send('realtime-status', { connected: false });
   });
 
   ws.on('error', (err) => {
+    console.error('[main] Realtime WS error:', err.message);
     if (win) win.webContents.send('error', `Realtime WS: ${err.message}`);
   });
 
@@ -647,9 +800,10 @@ ipcMain.handle('start-realtime', async (_e, opts) => {
 
 ipcMain.handle('stop-realtime', () => {
   realtimeActive = false;
-  try { if (core) core.stopRawStream(); } catch (_) {}
+  ttsQueue.length = 0;
+  try { if (core) core.stopRawStream(); } catch (e) { console.warn('[main] stopRawStream:', e.message); }
   if (realtimeWs) {
-    try { realtimeWs.close(); } catch (_) {}
+    try { realtimeWs.close(); } catch (e) { console.warn('[main] WS close:', e.message); }
     realtimeWs = null;
   }
   return { ok: true };
@@ -688,15 +842,29 @@ function httpPost(url, body, extraHeaders = {}) {
         res.on('data', c => data += c);
         res.on('end', () => {
           const processingMs = res.headers['x-processing-ms'];
+          if (!data.trim()) {
+            resolve({
+              ok: false,
+              status: res.statusCode,
+              error: `Empty response (HTTP ${res.statusCode})`,
+            });
+            return;
+          }
           try {
+            const parsedJson = JSON.parse(data);
             resolve({
               ok: res.statusCode >= 200 && res.statusCode < 300,
               status: res.statusCode,
-              data: JSON.parse(data),
+              data: parsedJson,
               processingMs: processingMs ? parseInt(processingMs, 10) : null,
             });
           } catch {
-            resolve({ ok: false, error: 'Invalid JSON', status: res.statusCode });
+            const preview = data.replace(/\s+/g, ' ').slice(0, 160);
+            resolve({
+              ok: false,
+              status: res.statusCode,
+              error: `Server returned non-JSON (HTTP ${res.statusCode}): ${preview}`,
+            });
           }
         });
       }

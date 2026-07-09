@@ -5,5 +5,5 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   build: { outDir: 'dist' },
-  server: { port: 5173, strictPort: true, host: 'localhost' },
+  server: { port: 5173, strictPort: true, host: '127.0.0.1' },
 });

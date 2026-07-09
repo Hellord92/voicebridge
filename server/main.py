@@ -99,7 +99,11 @@ app.add_middleware(
 async def require_license(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     auth = request.headers.get('Authorization', '')
     if not auth.startswith('Bearer '):
-        raise HTTPException(401, 'Missing license key')
+        license_hdr = request.headers.get('X-License-Key', '').strip()
+        if license_hdr:
+            auth = f'Bearer {license_hdr}'
+        else:
+            raise HTTPException(401, 'Missing license key')
     token = auth[7:].strip()
 
     # Firebase JWT → look up license by firebase_uid
@@ -155,7 +159,8 @@ async def health(db: AsyncSession = Depends(get_db)):
     return {
         'status':   'ok' if db_ok else 'degraded',
         'db':       db_ok,
-        'groq':     bool(settings.groq_api_key),
+        'groq':     False,
+        'realtime': bool(settings.openai_api_key),
         'openai':   bool(settings.openai_api_key),
         'gemini':   bool(settings.gemini_api_key),
         'eleven':   bool(settings.elevenlabs_api_key),
@@ -428,6 +433,7 @@ async def pipeline_stream(
 class TtsRequest(BaseModel):
     text: str
     target_lang: str = 'en'
+    voice_gender: str = 'female'
 
 
 @app.post('/api/tts')
@@ -438,7 +444,9 @@ async def tts_endpoint(
     db: AsyncSession = Depends(get_db),
     _license: dict = Depends(require_license),
 ):
-    mp3 = await synthesize(body.text, body.target_lang)
+    mp3 = await synthesize_streaming(
+        body.text, body.target_lang, voice_id=get_voice_id(body.voice_gender),
+    )
     license_key = resolve_license_key(_license, request)
     if not _license.get('free_trial'):
         await consume_minutes(db, license_key, 30)
@@ -479,35 +487,55 @@ async def realtime_session(
         f'If the input is noise, filler sounds, or incomplete, output nothing.'
     )
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            'https://api.openai.com/v1/realtime/sessions',
-            headers={
-                'Authorization': f'Bearer {settings.openai_api_key}',
-                'Content-Type': 'application/json',
-            },
-            json={
-                'model': 'gpt-4o-mini-realtime-preview',
-                'modalities': ['text'],          # text output → we use ElevenLabs for TTS
-                'instructions': system_prompt,
-                'input_audio_format': 'pcm16',
-                'input_audio_transcription': {'model': 'gpt-4o-mini-transcribe'},
-                'turn_detection': {
-                    'type': 'server_vad',
-                    'threshold': 0.5,
-                    'prefix_padding_ms': 300,
-                    'silence_duration_ms': 400,
+    session_payload = {
+        'session': {
+            'type': 'realtime',
+            'model': 'gpt-realtime-mini',
+            'instructions': system_prompt,
+            'output_modalities': ['text'],
+            'audio': {
+                'input': {
+                    'format': {'type': 'audio/pcm', 'rate': 24000},
+                    'turn_detection': {
+                        'type': 'server_vad',
+                        'threshold': 0.5,
+                        'prefix_padding_ms': 200,
+                        'silence_duration_ms': 200,
+                    },
                 },
             },
-        )
-        if resp.status_code != 200:
-            raise HTTPException(502, f'OpenAI session error: {resp.text}')
-        data = resp.json()
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                'https://api.openai.com/v1/realtime/client_secrets',
+                headers={
+                    'Authorization': f'Bearer {settings.openai_api_key}',
+                    'Content-Type': 'application/json',
+                },
+                json=session_payload,
+            )
+            if resp.status_code != 200:
+                log.error('OpenAI client_secrets HTTP %s: %s', resp.status_code, resp.text[:300])
+                raise HTTPException(502, f'OpenAI session error ({resp.status_code})')
+            data = resp.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error('OpenAI client_secrets failed: %s', e)
+        raise HTTPException(502, f'OpenAI session error: {e}')
+
+    token = data.get('value', '')
+    if not token:
+        log.error('OpenAI client_secrets missing value: %s', str(data)[:300])
+        raise HTTPException(502, 'OpenAI returned no session token')
 
     return {
-        'client_secret': data.get('client_secret', {}).get('value', ''),
-        'session_id': data.get('id', ''),
-        'expires_at': data.get('client_secret', {}).get('expires_at', 0),
+        'client_secret': token,
+        'session_id': data.get('session', {}).get('id', '') if isinstance(data.get('session'), dict) else '',
+        'expires_at': data.get('expires_at', 0),
     }
 
 

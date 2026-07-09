@@ -6,7 +6,8 @@
   "main": "electron/main.js",
   "private": true,
   "scripts": {
-    "dev": "concurrently -k \"vite --strictPort\" \"npx --yes wait-on@8.0.1 http://127.0.0.1:5173 && electron .\"",
+    "predev": "lsof -ti :5173 | xargs kill -9 2>/dev/null || true",
+    "dev": "concurrently -k \"vite --strictPort\" \"npx --yes wait-on@8.0.1 http://localhost:5173 && electron .\"",
     "build": "vite build && electron-builder",
     "build:mac": "vite build && electron-builder --arm64 --mac dmg",
     "build:mac:signed": "vite build && electron-builder --arm64 --mac dmg --config.mac.notarize=false",
