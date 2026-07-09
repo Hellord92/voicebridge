@@ -169,8 +169,10 @@ export default function DeviceSelector({
               ]}
               onChange={idx => {
                 const dev = paInputs.find(d => d.index === idx);
-                onDeviceChange?.('inputDeviceIndex', idx);
-                onDeviceChange?.('inputDeviceName', dev?.name || '');
+                onDeviceChange?.({
+                  inputDeviceIndex: idx,
+                  inputDeviceName: dev?.name || '',
+                });
               }}
               placeholder="Default Microphone"
             />

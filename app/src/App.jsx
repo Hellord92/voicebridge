@@ -687,14 +687,19 @@ export default function App() {
             driverInstalled={driverInstalled}
             micVisible={micVisible}
             blackHoleAvailable={blackHoleAvailable}
-            onDeviceChange={async (field, value) => {
-              if (field === '__micRefreshed') {
+            onDeviceChange={async (fieldOrUpdates, value) => {
+              if (fieldOrUpdates === '__micRefreshed') {
                 setMicVisible(!!value);
                 return;
               }
-              const s = { ...settings, [field]: value };
-              setSettings(s);
-              await window.vb.saveSettings(s);
+              const updates = typeof fieldOrUpdates === 'object'
+                ? fieldOrUpdates
+                : { [fieldOrUpdates]: value };
+              setSettings(prev => {
+                const s = { ...prev, ...updates };
+                window.vb.saveSettings(s);
+                return s;
+              });
             }}
             onInstallDriver={async () => {
               try {
