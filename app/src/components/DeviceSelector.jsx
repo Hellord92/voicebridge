@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 /**
  * DeviceSelector — uses PortAudio device list (window.vb.listDevices / refreshDevices)
@@ -8,6 +8,50 @@ import React, { useState, useEffect, useCallback } from 'react';
  * outputDeviceId (Web Audio) is kept for the output side since TTS goes via shared-memory
  * to the virtual mic driver — no PortAudio output selection needed there.
  */
+/* ── Custom dropdown — more reliable than native <select> in Electron ────── */
+function DeviceDropdown({ value, options, onChange, placeholder = 'Select…', className = '' }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const selected = options.find(o => o.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 bg-white/5 text-xs text-white rounded-lg px-2.5 py-2 border border-white/10 hover:border-cyan-400/40 focus:border-cyan-400/50 outline-none transition-colors text-left"
+      >
+        <span className="truncate">{selected?.label || placeholder}</span>
+        <span className="text-slate-500 flex-shrink-0">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 rounded-xl border border-white/10 shadow-2xl overflow-hidden"
+          style={{ background: '#13131f', maxHeight: '220px', overflowY: 'auto' }}>
+          {options.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => { onChange(o.value); setOpen(false); }}
+              className={`w-full text-left px-3 py-2 text-xs transition-colors hover:bg-white/10 flex items-center gap-2
+                ${o.value === value ? 'text-cyan-400 bg-cyan-500/10' : 'text-slate-300'}`}
+            >
+              {o.value === value && <span className="text-cyan-400">✓</span>}
+              <span className="truncate">{o.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DeviceSelector({
   selectedDeviceIndex,
   selectedOutputDeviceId,
@@ -116,21 +160,20 @@ export default function DeviceSelector({
           </div>
 
           <div className="flex gap-1.5">
-            <select
+            <DeviceDropdown
+              className="flex-1 min-w-0"
               value={selectedDeviceIndex ?? -1}
-              onChange={e => {
-                const idx = parseInt(e.target.value, 10);
+              options={[
+                { value: -1, label: 'Default Microphone' },
+                ...paInputs.map(d => ({ value: d.index, label: d.name })),
+              ]}
+              onChange={idx => {
                 const dev = paInputs.find(d => d.index === idx);
                 onDeviceChange?.('inputDeviceIndex', idx);
                 onDeviceChange?.('inputDeviceName', dev?.name || '');
               }}
-              className="flex-1 min-w-0 bg-white/5 text-xs text-white rounded-lg px-2.5 py-2 border border-white/10 focus:border-cyan-400/50 outline-none truncate"
-            >
-              <option value={-1}>Default Microphone</option>
-              {paInputs.map(d => (
-                <option key={d.index} value={d.index}>{d.name}</option>
-              ))}
-            </select>
+              placeholder="Default Microphone"
+            />
             <button
               type="button"
               onClick={handleRefresh}
@@ -151,18 +194,15 @@ export default function DeviceSelector({
           </div>
 
           {outputs.length > 0 ? (
-            <select
+            <DeviceDropdown
               value={bestOutputId}
-              onChange={e => onDeviceChange?.('outputDeviceId', e.target.value)}
-              className={`w-full bg-white/5 text-xs rounded-lg px-2.5 py-2 border outline-none truncate
-                ${isVb ? 'text-emerald-300 border-emerald-500/40' : isBh ? 'text-sky-300 border-sky-500/40' : 'text-white border-white/10'}
-              `}
-            >
-              <option value="default">Default Output</option>
-              {outputs.map(d => (
-                <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
-              ))}
-            </select>
+              options={[
+                { value: 'default', label: 'Default Output' },
+                ...outputs.map(d => ({ value: d.deviceId, label: d.label })),
+              ]}
+              onChange={id => onDeviceChange?.('outputDeviceId', id)}
+              placeholder="Default Output"
+            />
           ) : !driverInstalled ? (
             <button
               onClick={handleInstall}
