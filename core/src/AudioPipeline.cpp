@@ -169,12 +169,13 @@ struct AudioPipeline::Impl {
         if (ttsPlaying.load()) return;
         std::vector<float> copy(pcm, pcm + frames);
 
-        /* Energy gate: skip silence/noise before normalization amplifies it.
-         * Raw RMS < 0.012 = very quiet, likely background/BT noise, not speech.
-         * Bluetooth mics produce ~0.005-0.010 background noise, real speech > 0.015. */
+        /* Energy gate: skip near-silence before normalization amplifies it.
+         * 0.008 catches true silence & BT idle noise while passing real speech.
+         * If speech is very quiet, user should speak closer or raise mic gain. */
         float rawRms = computeRMS(copy);
-        if (rawRms < 0.012f) {
-            log("debug", "Skipped low-energy phrase (RMS=" + std::to_string(rawRms) + ")");
+        log("debug", "Phrase RMS=" + std::to_string(rawRms) + " frames=" + std::to_string(frames));
+        if (rawRms < 0.008f) {
+            log("warn", "Skipped low-energy phrase (RMS=" + std::to_string(rawRms) + ") — mic too quiet or wrong device?");
             return;
         }
 
@@ -424,15 +425,17 @@ int AudioPipeline::start()
 
     PhraseConfig pc;
     pc.sampleRate        = mImpl->cfg.sampleRate;
-    pc.minPhraseFrames   = (uint32_t)(0.300 * pc.sampleRate);  /* 300 ms minimum */
-    pc.silenceFrames     = (uint32_t)(0.600 * pc.sampleRate);  /* 600 ms pause — tolerates reading pace */
+    pc.minPhraseFrames   = (uint32_t)(0.200 * pc.sampleRate);  /* 200 ms minimum */
+    pc.silenceFrames     = (uint32_t)(0.500 * pc.sampleRate);  /* 500 ms pause */
     pc.maxPhraseFrames   = (uint32_t)(5.0   * pc.sampleRate);  /* 5 s force-flush */
-    pc.vadAggressiveness = 2;                                   /* 2 = balanced */
+    pc.vadAggressiveness = 1;                                   /* 1 = more sensitive, catches more speech */
     mImpl->detector = new PhraseDetector(pc);
     mImpl->detector->setCallback([this](const float *pcm, uint32_t frames){
         mImpl->onPhrase(pcm, frames);
     });
 
+    mImpl->log("info", "Opening input device index=" + std::to_string(mImpl->cfg.inputDeviceIndex)
+        + " sampleRate=" + std::to_string((int)mImpl->cfg.sampleRate));
     mImpl->capture = vb_capture_create(
         mImpl->cfg.inputDeviceIndex,
         mImpl->cfg.sampleRate, 512);
