@@ -81,14 +81,20 @@ export default function DeviceSelector({
     }
 
     try {
-      /* Web Audio output enumeration (for output side only) */
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(t => t.stop());
+      /* Request mic permission so device labels are available */
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(t => t.stop());
+      } catch (_) { /* permission denied — labels may be empty, continue anyway */ }
+
       const all = await navigator.mediaDevices.enumerateDevices();
-      setOutputs(all.filter(d => d.kind === 'audiooutput').map(d => ({
-        deviceId: d.deviceId,
-        label: d.label || `Speaker (${d.deviceId.slice(0, 8)}…)`,
-      })));
+      const outs = all
+        .filter(d => d.kind === 'audiooutput')
+        .map(d => ({
+          deviceId: d.deviceId,
+          label: d.label || `Speaker (${d.deviceId.slice(0, 8)}…)`,
+        }));
+      if (outs.length > 0) setOutputs(outs);
     } catch (_) {}
   }, []);
 

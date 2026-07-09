@@ -703,13 +703,22 @@ export default function App() {
             }}
             onInstallDriver={async () => {
               try {
-                await window.vb.installDriver?.();
+                const r = await window.vb.installDriver?.();
+                if (r && !r.ok) {
+                  toast(r.error || 'Driver install failed', 'error');
+                  return;
+                }
                 const drv = await window.vb.isDriverInstalled();
-                setDriverInstalled(!!drv);
+                setDriverInstalled(!!drv?.installed);
                 const mic = await window.vb.verifyDriverMic();
                 setMicVisible(!!mic?.micVisible);
+                if (mic?.micVisible) {
+                  toast('Virtual mic installed — restart Meet/Zoom', 'success');
+                } else {
+                  toast('Driver installed — log out and back in to activate', 'warning');
+                }
               } catch (err) {
-                toast.error('Driver install failed: ' + err.message);
+                toast('Driver install failed: ' + (err?.message || err), 'error');
               }
             }}
           />
