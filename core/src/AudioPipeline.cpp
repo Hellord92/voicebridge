@@ -170,9 +170,10 @@ struct AudioPipeline::Impl {
         std::vector<float> copy(pcm, pcm + frames);
 
         /* Energy gate: skip silence/noise before normalization amplifies it.
-         * Raw RMS < 0.005 = very quiet, likely background noise, not speech. */
+         * Raw RMS < 0.012 = very quiet, likely background/BT noise, not speech.
+         * Bluetooth mics produce ~0.005-0.010 background noise, real speech > 0.015. */
         float rawRms = computeRMS(copy);
-        if (rawRms < 0.005f) {
+        if (rawRms < 0.012f) {
             log("debug", "Skipped low-energy phrase (RMS=" + std::to_string(rawRms) + ")");
             return;
         }
