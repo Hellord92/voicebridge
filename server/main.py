@@ -23,6 +23,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Depends, status
@@ -41,8 +42,8 @@ from models  import Base, License, Order, UsageEvent
 from pricing import PLANS, get_plan, FREE_TRIAL_SECONDS
 from services.license       import (
     validate_license, create_license, activate_license, consume_minutes,
-    pick_best_license, stack_minutes_on_license, deactivate_free_licenses,
-    log_pipeline_usage, free_trial_seconds_used,
+    pick_best_license, get_licenses_for_uid, stack_minutes_on_license,
+    deactivate_free_licenses, log_pipeline_usage, free_trial_seconds_used,
 )
 from services.tts_proxy     import synthesize
 from services.pipeline_ai   import run_tiered_stt_translate, ai_response_headers, ai_tier_label
@@ -112,7 +113,7 @@ async def require_license(request: Request, db: AsyncSession = Depends(get_db)) 
             fb = verify_firebase_token(token)
         except ValueError as e:
             raise HTTPException(403, str(e))
-        result = await validate_license_by_uid(db, fb['uid'])
+        result = await validate_license_by_uid(db, fb['uid'], fb.get('email'))
         if not result['valid']:
             raise HTTPException(403, result.get('reason', 'invalid'))
         result['firebase_uid'] = fb['uid']
@@ -136,12 +137,14 @@ def resolve_license_key(_license: dict, request: Request) -> str:
     return token
 
 
-async def validate_license_by_uid(db: AsyncSession, uid: str) -> dict:
-    """Validate best active license for Firebase UID."""
-    from pricing import get_plan, FREE_TRIAL_SECONDS
-    stmt = select(License).where(License.firebase_uid == uid).order_by(License.activated_at.desc())
-    lics = (await db.execute(stmt)).scalars().all()
-    lic  = pick_best_license(list(lics))
+async def validate_license_by_uid(
+    db: AsyncSession,
+    uid: str,
+    email: Optional[str] = None,
+) -> dict:
+    """Validate best active license for Firebase UID (auto-provision on first use)."""
+    lics = await get_licenses_for_uid(db, uid, email)
+    lic  = pick_best_license(lics)
     if lic is None:
         return {'valid': False, 'reason': 'no_active_license'}
     return await validate_license(db, lic.key)
@@ -194,23 +197,11 @@ async def auth_me(request: Request, db: AsyncSession = Depends(get_db)):
 
     uid, email = fb['uid'], fb['email']
 
-    # Find existing license for this UID
-    from models  import License
     from pricing import get_plan
-    stmt = select(License).where(License.firebase_uid == uid).order_by(License.activated_at.desc())
-    lics = (await db.execute(stmt)).scalars().all()
-
-    if not lics:
-        # First login → create free trial license
-        lic = await create_license(db, email=email, plan_id='free')
-        await db.execute(
-            update(License).where(License.id == lic.id).values(firebase_uid=uid)
-        )
-        await db.commit()
-        lics = [lic]
+    lics = await get_licenses_for_uid(db, uid, email)
 
     # Return best license (paid preferred over free)
-    active_lic = pick_best_license(list(lics))
+    active_lic = pick_best_license(lics)
     plan = get_plan(active_lic.plan_id)
     minutes_left = active_lic.minutes_total - active_lic.minutes_used
     trial_left = None

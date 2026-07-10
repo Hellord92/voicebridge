@@ -83,6 +83,42 @@ def pick_best_license(lics: list[License]) -> License | None:
     return active[0]
 
 
+async def get_licenses_for_uid(
+    db: AsyncSession,
+    uid: str,
+    email: str | None = None,
+) -> list[License]:
+    """Return licenses for Firebase UID; link by email or create free trial if missing."""
+    stmt = select(License).where(License.firebase_uid == uid).order_by(License.activated_at.desc())
+    lics = list((await db.execute(stmt)).scalars().all())
+
+    if not lics and email:
+        email_stmt = (
+            select(License)
+            .where(License.email == email)
+            .order_by(License.activated_at.desc())
+        )
+        email_lics = list((await db.execute(email_stmt)).scalars().all())
+        if email_lics:
+            for lic in email_lics:
+                if not lic.firebase_uid:
+                    await db.execute(
+                        update(License).where(License.id == lic.id).values(firebase_uid=uid)
+                    )
+            await db.commit()
+            lics = list((await db.execute(stmt)).scalars().all())
+
+    if not lics and email:
+        lic = await create_license(db, email=email, plan_id='free')
+        await db.execute(
+            update(License).where(License.id == lic.id).values(firebase_uid=uid)
+        )
+        await db.commit()
+        lics = [lic]
+
+    return lics
+
+
 async def create_license(
     db: AsyncSession,
     email: str,
@@ -160,8 +196,8 @@ async def validate_license(db: AsyncSession, key: str) -> dict:
             'license_key':        key,
             'dev_mode':           True,
             'ai_tier':            'trial',
-            'ai_stt':             'groq',
-            'ai_translate':       'groq',
+            'ai_stt':             'openai-realtime',
+            'ai_translate':       'openai-realtime',
         }
 
     if not verify_key_format(key):
@@ -190,8 +226,8 @@ async def validate_license(db: AsyncSession, key: str) -> dict:
                 'license_key':        lic.key,
                 'dev_mode':           True,
                 'ai_tier':            'trial',
-                'ai_stt':             'groq',
-                'ai_translate':       'groq',
+                'ai_stt':             'openai-realtime',
+                'ai_translate':       'openai-realtime',
             }
         used = await free_trial_seconds_used(db, key)
         if used >= FREE_TRIAL_SECONDS:
@@ -206,8 +242,8 @@ async def validate_license(db: AsyncSession, key: str) -> dict:
             'trial_seconds_left': max(0, FREE_TRIAL_SECONDS - used),
             'license_key':    lic.key,
             'ai_tier':        'trial',
-            'ai_stt':         'groq',
-            'ai_translate':   'groq',
+            'ai_stt':         'openai-realtime',
+            'ai_translate':   'openai-realtime',
         }
 
     if not lic.active:
@@ -227,8 +263,8 @@ async def validate_license(db: AsyncSession, key: str) -> dict:
         'free_trial':    False,
         'license_key':   lic.key,
         'ai_tier':       'premium',
-        'ai_stt':        'openai',
-        'ai_translate':  'gemini',
+        'ai_stt':        'openai-realtime',
+        'ai_translate':  'openai-realtime',
     }
 
 

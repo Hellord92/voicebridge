@@ -20,7 +20,7 @@ _SYSTEM = (
 # Whisper hallucination patterns — skip translation entirely
 _SKIP_PATTERNS = {
     '...', '…', '.', '..', '....', 'eee', 'hmm', 'hm', 'uh', 'um',
-    '[music]', '[applause]', '[laughter]', 'music', 'thank you',
+    '[music]', '[applause]', '[laughter]', 'music',
 }
 
 
@@ -34,8 +34,8 @@ def _is_noise_transcript(text: str) -> bool:
     # Only punctuation / ellipsis
     if all(c in '.…!?,;: ' for c in t):
         return True
-    # Very short single token that looks like noise
-    if len(t) <= 2:
+    # Single character noise (not real words)
+    if len(t) <= 1:
         return True
     return False
 

@@ -565,14 +565,33 @@ let phraseStartMs   = 0;
 const ttsQueue      = [];
 let ttsBusy         = false;
 
+async function syncAccountLicense(user) {
+  if (!user?.idToken) return user;
+  const serverUrl = getServerUrl();
+  try {
+    const acctResp = await httpPost(`${serverUrl}/api/auth/me`, null, {
+      Authorization: `Bearer ${user.idToken}`,
+    });
+    if (acctResp.ok && acctResp.data?.license?.key) {
+      user.account = acctResp.data;
+      store.set('licenseKey', acctResp.data.license.key);
+      store.set('firebaseUser', user);
+      console.log('[main] License synced:', acctResp.data.license.key);
+    } else if (!acctResp.ok) {
+      console.warn('[main] auth/me sync failed:', acctResp.status, acctResp.error || acctResp.data?.detail);
+    }
+  } catch (e) {
+    console.warn('[main] syncAccountLicense error:', e.message);
+  }
+  return user;
+}
+
 async function refreshStoredUser() {
   const user = store.get('firebaseUser', null);
   if (!user) return null;
 
   const needsRefresh = !user.tokenExpiry || Date.now() > user.tokenExpiry - 120_000;
-  if (!needsRefresh) return user;
-
-  if (user.refreshToken && user.firebaseApiKey) {
+  if (needsRefresh && user.refreshToken && user.firebaseApiKey) {
     try {
       const refreshUrl = `https://securetoken.googleapis.com/v1/token?key=${user.firebaseApiKey}`;
       const refreshResult = await httpPost(refreshUrl, {
@@ -583,29 +602,25 @@ async function refreshStoredUser() {
         user.idToken      = refreshResult.data.id_token;
         user.refreshToken = refreshResult.data.refresh_token || user.refreshToken;
         user.tokenExpiry  = Date.now() + 3500 * 1000;
-        const serverUrl   = getServerUrl();
-        const acctResp    = await httpPost(`${serverUrl}/api/auth/me`, null, {
-          Authorization: `Bearer ${user.idToken}`,
-        });
-        if (acctResp.ok && acctResp.data?.license?.key) {
-          user.account = acctResp.data;
-          store.set('licenseKey', acctResp.data.license.key);
-        }
         store.set('firebaseUser', user);
       }
     } catch (e) {
       console.warn('[main] Token refresh error:', e.message);
     }
   }
+
+  /* Always sync license from server so UID/key stay linked */
+  await syncAccountLicense(user);
   return user;
 }
 
 function realtimeAuthHeaders() {
-  const stored     = store.get('firebaseUser') || {};
   const licenseKey = store.get('licenseKey') || '';
+  const stored     = store.get('firebaseUser') || {};
   const idToken    = stored.idToken || '';
-  if (idToken) return { Authorization: `Bearer ${idToken}` };
+  /* Prefer VB key — avoids no_active_license when UID not yet linked in DB */
   if (licenseKey) return { Authorization: `Bearer ${licenseKey}` };
+  if (idToken) return { Authorization: `Bearer ${idToken}` };
   return {};
 }
 
@@ -670,6 +685,11 @@ ipcMain.handle('start-realtime', async (_e, opts) => {
   if (realtimeActive) return { ok: false, error: 'Already running' };
 
   await refreshStoredUser();
+
+  if (!store.get('licenseKey')) {
+    const user = store.get('firebaseUser');
+    if (user) await syncAccountLicense(user);
+  }
 
   const serverUrl  = getServerUrl();
   const authHdrs   = realtimeAuthHeaders();
