@@ -348,8 +348,29 @@ struct AudioPipeline::Impl {
             if (cfg.errorCallback) {
                 std::string msg;
                 if (code == 0)        msg = "Cannot reach API — check network or server";
-                else if (code == 401) msg = "Unauthorized (401) — license key missing";
-                else if (code == 403) msg = "Trial expired or invalid license (403)";
+                else if (code == 401) msg = "Unauthorized (401) — sign out and sign in again";
+                else if (code == 403) {
+                    auto errJson = json::parse(body, nullptr, false);
+                    std::string detail;
+                    if (!errJson.is_discarded()) {
+                        if (errJson.contains("detail")) {
+                            if (errJson["detail"].is_string())
+                                detail = errJson["detail"].get<std::string>();
+                            else if (errJson["detail"].is_object() && errJson["detail"].contains("reason"))
+                                detail = errJson["detail"]["reason"].get<std::string>();
+                        }
+                    }
+                    if (detail == "trial_session_exhausted")
+                        msg = "minutes_exhausted";
+                    else if (detail == "payment_pending")
+                        msg = "License payment pending — complete checkout on voicebridgeapps.com";
+                    else if (detail == "minutes_exhausted")
+                        msg = "minutes_exhausted";
+                    else if (!detail.empty())
+                        msg = "License error: " + detail;
+                    else
+                        msg = "Trial expired or invalid license (403)";
+                }
                 else if (code == 422) msg = "Bad request (422) — " + body.substr(0, 80);
                 else                  msg = "Server error (HTTP " + std::to_string(code) + ")";
                 cfg.errorCallback(msg);

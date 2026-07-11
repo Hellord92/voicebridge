@@ -263,28 +263,52 @@ export default function App() {
       setPipelinePhase('error');
       errorCount.current += 1;
       setStatusMsg(m);
-      if (m === 'Server error' || m === 'minutes_exhausted') {
+
+      const isTrialExhausted = m === 'minutes_exhausted'
+        || m.includes('trial_session_exhausted')
+        || m.includes('Trial expired');
+
+      if (m === 'Server error' || isTrialExhausted) {
         const now = Date.now();
         if (now - lastErrorToastAt.current > 15000) {
           lastErrorToastAt.current = now;
           toast(
-            m === 'minutes_exhausted'
-              ? 'Trial/minutes exhausted'
+            isTrialExhausted
+              ? 'Daily free trial used up (5 min). Upgrade to continue.'
               : 'ElevenLabs TTS failed — transcript visible but no audio. Check API key.',
             'error',
             6000,
           );
         }
+        if (isTrialExhausted) {
+          setRunning(false);
+          setTrialActive(false);
+          setTrialLeft(0);
+          setStatus('error');
+          await showTrialEndedModal();
+          return;
+        }
         setStatus('active');
         setPipelinePhase('done');
         return;
       }
+
+      const isLicenseFatal = m.includes('License error')
+        || m.includes('payment_pending')
+        || m.includes('Unauthorized');
+
       setStatus('error');
       setRunning(false);
       setTrialActive(false);
       if (errorCount.current <= 3) {
-        await alert({ title: 'Translation error', message: m, variant: 'error' });
+        await alert({
+          title: isLicenseFatal ? 'License required' : 'Translation error',
+          message: m,
+          variant: 'error',
+        });
       }
+      if (isLicenseFatal) return;
+
       const currentSettings = settingsRef.current;
       if (reconnectAttempt.current < 3 && currentSettings) {
         reconnectAttempt.current += 1;

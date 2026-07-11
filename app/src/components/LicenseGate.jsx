@@ -4,6 +4,7 @@ const PRICING_URL = 'https://voicebridgeapps.com/pricing';
 
 export default function LicenseGate({ settings, licensed, licenseInfo, onActivate, onClose, onSignOut, serverUrl }) {
   const [key, setKey]             = useState(settings?.licenseKey || '');
+  const [showKey, setShowKey]     = useState(false);
   const [msg, setMsg]             = useState('');
   const [loading, setLoading]     = useState(false);
   const [refCode, setRefCode]     = useState('');
@@ -125,13 +126,24 @@ export default function LicenseGate({ settings, licensed, licenseInfo, onActivat
 
             <div className="border-t border-slate-700 pt-4">
               <label className="text-xs text-slate-400 block mb-1">Have a license key?</label>
-              <input
-                type="text"
-                value={key}
-                onChange={e => setKey(e.target.value)}
-                placeholder="VB-T-A1B2C3-D4E5F6-ABCD"
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-sky-400 font-mono mb-2"
-              />
+              <div className="relative mb-2">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={key}
+                  onChange={e => setKey(e.target.value)}
+                  placeholder="VB-T-A1B2C3-D4E5F6-ABCD"
+                  autoComplete="off"
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 pr-10 text-sm text-white outline-none focus:border-sky-400 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(v => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white px-1"
+                  aria-label={showKey ? 'Hide license key' : 'Show license key'}
+                >
+                  {showKey ? 'Hide' : 'Show'}
+                </button>
+              </div>
               <button
                 onClick={handleActivate}
                 disabled={loading}

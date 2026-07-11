@@ -436,44 +436,22 @@ ipcMain.handle('refresh-devices', async () => {
 
 ipcMain.handle('start-pipeline', async (_e, opts) => {
   if (!core) return { ok: false, error: 'Audio engine could not be loaded. Please reinstall VoiceBridge.' };
-  /* Stop any existing pipeline before starting a new one to prevent double PortAudio streams */
   try { core.stopPipeline(); } catch (_) {}
 
-  /* Use stored license key — always take from store, opts.licenseKey is just a hint */
+  /* Sync license from server before pipeline auth (prevents stale-key 403) */
+  await refreshStoredUser();
+
   const storedKey = store.get('licenseKey', '');
   if (storedKey) opts.licenseKey = storedKey;
 
-  /* If still no key → try a quick server refresh (non-blocking on success path) */
   if (!opts.licenseKey) {
-    try {
-      const user = store.get('firebaseUser');
-      if (user?.idToken) {
-        const acct = await httpPost(`${getServerUrl()}/api/auth/me`, null, {
-          Authorization: `Bearer ${user.idToken}`,
-        });
-        if (acct.ok && acct.data?.license?.key) {
-          opts.licenseKey = acct.data.license.key;
-          store.set('licenseKey', acct.data.license.key);
-        }
-      }
-    } catch (_) {}
+    const user = store.get('firebaseUser');
+    if (user) await syncAccountLicense(user);
+    opts.licenseKey = store.get('licenseKey', '');
   }
   if (!opts.licenseKey) {
     return { ok: false, error: 'No license key — sign out and sign in again.' };
   }
-  /* Background-refresh license without blocking startup */
-  setImmediate(async () => {
-    try {
-      const user = store.get('firebaseUser');
-      if (!user?.idToken) return;
-      const acct = await httpPost(`${getServerUrl()}/api/auth/me`, null, {
-        Authorization: `Bearer ${user.idToken}`,
-      });
-      if (acct.ok && acct.data?.license?.key) {
-        store.set('licenseKey', acct.data.license.key);
-      }
-    } catch (_) {}
-  });
 
   /* Request microphone permission on macOS before touching audio */
   if (process.platform === 'darwin') {
