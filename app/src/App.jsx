@@ -53,7 +53,6 @@ export default function App() {
   const [pttMode, setPttMode] = useState(false);
   const [pttHeld, setPttHeld] = useState(false);
   const pttRef = useRef(false);
-  const [realtimeMode, setRealtimeMode] = useState(false);
   const realtimeTranslationBuffer = useRef('');
   const trialModalShown = useRef(false);
   const errorCount = useRef(0);
@@ -68,9 +67,7 @@ export default function App() {
 
   const handleStop = useCallback(async () => {
     try { await window.vb?.stopPipeline?.(); } catch (_) {}
-    if (realtimeMode) {
-      try { await window.vb?.stopRealtime?.(); } catch (_) {}
-    }
+    try { await window.vb?.stopRealtime?.(); } catch (_) {}
     setRunning(false);
     setTrialActive(false);
     setStatus('idle');
@@ -79,6 +76,8 @@ export default function App() {
     setPipelinePhase('idle');
     setShowControls(true);
     setShowSummary(true);
+    realtimeTranslationBuffer.current = '';
+    pendingExchangeId.current = null;
   }, []);
 
   /* Push-to-Talk: Space bar mutes/unmutes input while running */
@@ -169,8 +168,9 @@ export default function App() {
         if (!s.setupDone) setShowSetup(true);
         if (!account && s.licenseKey) {
           const r = await window.vb.validateLicense(s.licenseKey);
-          setLicensed(r.ok && !r.data?.free_trial);
-          if (r.ok) {
+          const valid = r.data?.valid ?? r.ok;
+          setLicensed(valid && !r.data?.free_trial);
+          if (valid) {
             setLicenseInfo(r.data);
             const secs = trialSecondsFromLicense(r.data);
             if (secs != null) setTrialLeft(secs);
@@ -291,6 +291,8 @@ export default function App() {
         const delay = 1000 * Math.pow(2, reconnectAttempt.current - 1);
         toast(`Reconnecting in ${delay / 1000}s…`, 'warning', delay);
         setTimeout(async () => {
+          try { await window.vb?.stopPipeline?.(); } catch (_) {}
+          try { await window.vb?.stopRealtime?.(); } catch (_) {}
           const res = await window.vb.startPipeline({
             inputDeviceIndex: currentSettings.inputDeviceIndex,
             licenseKey:       currentSettings.licenseKey,
@@ -385,7 +387,8 @@ export default function App() {
 
     if (!licensed && settings.licenseKey) {
       const vr = await window.vb.validateLicense(settings.licenseKey);
-      if (vr.ok) {
+      const vrValid = vr.data?.valid ?? vr.ok;
+      if (vrValid) {
         setLicenseInfo(vr.data);
         const secs = trialSecondsFromLicense(vr.data);
         if (secs != null) setTrialLeft(secs);
@@ -441,32 +444,11 @@ export default function App() {
       }
     }
 
-    /* Realtime mode: use OpenAI Realtime WebSocket instead of phrase pipeline */
-    if (realtimeMode) {
-      const res = await window.vb.startRealtime({
-        inputDeviceIndex: settings.inputDeviceIndex,
-        sourceLang:       settings.sourceLang || 'auto',
-        targetLang:       settings.targetLang || 'en',
-      });
-      if (res.ok) {
-        sessionStartRef.current = Date.now();
-        setRunning(true);
-        setStatus('translating');
-        setStatusMsg('Realtime mode active');
-        setShowControls(false);
-        setShowSummary(false);
-        toast('Realtime translation started', 'success');
-      } else {
-        await alert({ title: 'Realtime error', message: res.error || 'Could not start', variant: 'error' });
-      }
-      return;
-    }
-
     const res = await window.vb.startPipeline({
       inputDeviceIndex: settings.inputDeviceIndex,
       licenseKey:       settings.licenseKey,
-      sourceLang:       settings.sourceLang,
-      targetLang:       settings.targetLang,
+      sourceLang:       settings.sourceLang || 'auto',
+      targetLang:       settings.targetLang || 'en',
       voiceGender:      settings.voiceGender || 'female',
       glossaryJson:     JSON.stringify(settings.glossary || []),
     });
@@ -480,23 +462,14 @@ export default function App() {
       setPartialTranscript('');
       setPipelinePhase('listening');
       setShowControls(false);
+      setShowSummary(false);
       errorCount.current = 0;
       if (!licensed) setTrialActive(true);
       toast('Translation started', 'success');
     } else {
       setStatus('error');
       setStatusMsg(res.error || 'Failed to start');
-      if (res.code === -1) {
-        await alert({
-          title: 'Microphone access needed',
-          message: res.error,
-          detail: 'System Settings → Privacy & Security → Microphone → enable Electron',
-          variant: 'error',
-        });
-        await window.vb.openSystemSettings('microphone');
-      } else {
-        await alert({ title: 'Could not start', message: res.error || 'Failed to start', variant: 'error' });
-      }
+      await alert({ title: 'Could not start', message: res.error || 'Failed to start', variant: 'error' });
     }
   }, [settings, licensed, trialLeft, confirm, alert, toast, showTrialEndedModal]);
 
@@ -511,7 +484,8 @@ export default function App() {
 
   const handleLicenseActivate = useCallback(async (key) => {
     const r = await window.vb.validateLicense(key);
-    if (r.ok) {
+    const rValid = r.data?.valid ?? r.ok;
+    if (rValid) {
       const s = { ...settings, licenseKey: key };
       setSettings(s);
       await window.vb.saveSettings(s);
@@ -612,7 +586,7 @@ export default function App() {
           )}
           {licensed && licenseInfo && (
             <span className="text-[10px] bg-violet-500/10 text-violet-300 px-2 py-0.5 rounded-full border border-violet-400/20">
-              Premium · OpenAI+Gemini
+              Premium · Groq + Gemini
             </span>
           )}
           {licensed && licenseInfo && minutesLeft != null && (
@@ -687,6 +661,7 @@ export default function App() {
             driverInstalled={driverInstalled}
             micVisible={micVisible}
             blackHoleAvailable={blackHoleAvailable}
+            running={running}
             onDeviceChange={async (fieldOrUpdates, value) => {
               if (fieldOrUpdates === '__micRefreshed') {
                 setMicVisible(!!value);
@@ -761,18 +736,6 @@ export default function App() {
         {!running ? (
           <div className="flex items-center gap-2">
             <button onClick={handleStart} className="btn-primary btn-pulse flex-1">Start Translation</button>
-            <button
-              type="button"
-              title={realtimeMode ? 'Realtime ON — OpenAI Realtime API (~200ms)' : 'Enable Realtime mode (lowest latency)'}
-              onClick={() => setRealtimeMode(v => !v)}
-              className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                realtimeMode
-                  ? 'bg-violet-500/20 border-violet-500/50 text-violet-400'
-                  : 'border-white/10 text-slate-500 hover:text-violet-400'
-              }`}
-            >
-              ⚡RT
-            </button>
             <button
               type="button"
               title={pttMode ? 'Push-to-Talk ON — hold Space to speak' : 'Enable Push-to-Talk (only YOUR voice)'}

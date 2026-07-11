@@ -1,6 +1,10 @@
 """
-AI routing — OpenAI Realtime is the primary client path.
-Legacy /api/pipeline endpoints use OpenAI STT + Gemini/Google translate (no Groq).
+Tier-based AI routing — Groq phrase pipeline (primary macOS path).
+
+  STT (all tiers)     → Groq Whisper (fallback: OpenAI mini if configured)
+  Translation (trial) → Groq LLaMA
+  Translation (paid)  → Gemini (fallback: Groq)
+  TTS (all tiers)     → ElevenLabs
 """
 from __future__ import annotations
 
@@ -8,9 +12,10 @@ import logging
 
 from config import settings
 from services.noise_filter import is_noise_transcript
+from services.stt import transcribe as transcribe_groq
 from services.stt_openai import transcribe_openai
+from services.translate_groq import translate_groq
 from services.translate_gemini import translate_gemini
-from services.translate import translate as translate_google
 
 log = logging.getLogger('voicebridge.pipeline_ai')
 
@@ -20,36 +25,45 @@ def ai_tier_label(free_trial: bool) -> str:
 
 
 def ai_stack_for_tier(free_trial: bool) -> dict:
-    return {
-        'tier': 'trial' if free_trial else 'premium',
-        'stt': 'openai-realtime',
-        'translate': 'openai-realtime',
-        'tts': 'elevenlabs',
-    }
+    if free_trial:
+        return {'tier': 'trial', 'stt': 'groq', 'translate': 'groq', 'tts': 'elevenlabs'}
+    return {'tier': 'premium', 'stt': 'groq', 'translate': 'gemini', 'tts': 'elevenlabs'}
 
 
 async def transcribe_tiered(audio_bytes: bytes, source_lang: str, *, free_trial: bool) -> tuple[str, str]:
-    if not settings.openai_api_key:
-        raise RuntimeError('OPENAI_API_KEY not configured')
-    text = await transcribe_openai(audio_bytes, source_lang)
-    return text, 'openai-mini'
+    """Returns (transcript, stt_provider). Groq Whisper primary; OpenAI optional fallback."""
+    if settings.groq_api_key:
+        try:
+            text = await transcribe_groq(audio_bytes, source_lang)
+            return text, 'groq'
+        except Exception as e:
+            log.warning('Groq STT failed, falling back to OpenAI: %s', e)
+
+    if settings.openai_api_key:
+        text = await transcribe_openai(audio_bytes, source_lang)
+        return text, 'openai-mini'
+
+    raise RuntimeError('GROQ_API_KEY or OPENAI_API_KEY required for STT')
 
 
 async def translate_tiered(
     text: str, source_lang: str, target_lang: str, *, free_trial: bool,
 ) -> tuple[str, str]:
+    """Returns (translation, translate_provider)."""
     if not text.strip():
         return '', 'none'
 
-    if settings.gemini_api_key:
-        try:
-            out = await translate_gemini(text, source_lang, target_lang)
-            return out, 'gemini'
-        except Exception as e:
-            log.warning('Gemini translate failed, falling back to Google: %s', e)
+    if free_trial or not settings.gemini_api_key:
+        out = await translate_groq(text, source_lang, target_lang)
+        return out, 'groq'
 
-    out = await translate_google(text, source_lang, target_lang)
-    return out, 'google'
+    try:
+        out = await translate_gemini(text, source_lang, target_lang)
+        return out, 'gemini'
+    except Exception as e:
+        log.warning('Gemini translate failed, falling back to Groq: %s', e)
+        out = await translate_groq(text, source_lang, target_lang)
+        return out, 'groq'
 
 
 async def run_tiered_stt_translate(
@@ -102,7 +116,7 @@ async def run_tiered_stt_translate_parallel(
 def ai_response_headers(stack: dict, processing_ms: int) -> dict:
     return {
         'X-Processing-Ms': str(processing_ms),
-        'X-AI-Tier': stack.get('tier', 'realtime'),
-        'X-AI-STT': stack.get('stt', 'openai-realtime'),
-        'X-AI-Translate': stack.get('translate', 'openai-realtime'),
+        'X-AI-Tier': stack.get('tier', 'trial'),
+        'X-AI-STT': stack.get('stt', 'groq'),
+        'X-AI-Translate': stack.get('translate', 'groq'),
     }

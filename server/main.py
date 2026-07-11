@@ -162,7 +162,7 @@ async def health(db: AsyncSession = Depends(get_db)):
     return {
         'status':   'ok' if db_ok else 'degraded',
         'db':       db_ok,
-        'groq':     False,
+        'groq':     bool(settings.groq_api_key),
         'realtime': bool(settings.openai_api_key),
         'openai':   bool(settings.openai_api_key),
         'gemini':   bool(settings.gemini_api_key),
