@@ -174,7 +174,7 @@ struct AudioPipeline::Impl {
          * If speech is very quiet, user should speak closer or raise mic gain. */
         float rawRms = computeRMS(copy);
         log("debug", "Phrase RMS=" + std::to_string(rawRms) + " frames=" + std::to_string(frames));
-        if (rawRms < 0.008f) {
+        if (rawRms < 0.006f) {
             log("warn", "Skipped low-energy phrase (RMS=" + std::to_string(rawRms) + ") — mic too quiet or wrong device?");
             return;
         }
@@ -313,15 +313,15 @@ struct AudioPipeline::Impl {
 
         if (ep.ssl) {
             httplib::SSLClient cli(ep.host.c_str(), ep.port);
-            cli.set_connection_timeout(15);
-            cli.set_read_timeout(90);
+            cli.set_connection_timeout(5);
+            cli.set_read_timeout(12);
             streamRes = cli.Post("/api/pipeline/stream", headers, form);
             if (!streamRes || streamRes->status != 200)
                 fallback = cli.Post("/api/pipeline", headers, form);
         } else {
             httplib::Client cli(ep.host.c_str(), ep.port);
-            cli.set_connection_timeout(15);
-            cli.set_read_timeout(90);
+            cli.set_connection_timeout(5);
+            cli.set_read_timeout(12);
             streamRes = cli.Post("/api/pipeline/stream", headers, form);
             if (!streamRes || streamRes->status != 200)
                 fallback = cli.Post("/api/pipeline", headers, form);
@@ -506,3 +506,35 @@ void AudioPipeline::setVoiceGender(const std::string &gender)
 
 void AudioPipeline::muteInput()   { mImpl->inputMuted.store(true);  }
 void AudioPipeline::unmuteInput() { mImpl->inputMuted.store(false); }
+
+int openVirtualMicShm()
+{
+#ifdef __APPLE__
+    return vb_shm_open();
+#else
+    return -1;
+#endif
+}
+
+int playMp3ToVirtualMic(const uint8_t *data, size_t len)
+{
+    if (!data || len == 0) return 0;
+#ifdef __APPLE__
+    static bool shmReady = false;
+    if (!shmReady) {
+        if (vb_shm_open() != 0) return -1;
+        shmReady = true;
+    }
+    std::string mp3(reinterpret_cast<const char *>(data), len);
+    auto pcmOut = decodeMp3(mp3, false);
+    if (pcmOut.empty()) return 0;
+    auto pcm48 = resample441to48(pcmOut);
+    normalizePCM(pcm48);
+    vb_shm_write(pcm48.data(), (uint32_t)pcm48.size());
+    return (int)pcm48.size();
+#else
+    (void)data;
+    (void)len;
+    return -1;
+#endif
+}

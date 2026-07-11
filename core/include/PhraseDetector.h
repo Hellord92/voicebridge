@@ -19,10 +19,10 @@
 
 struct PhraseConfig {
     double   sampleRate      = 48000.0;
-    uint32_t silenceFrames   = 7200;     /* 150 ms at 48 kHz */
-    uint32_t minPhraseFrames = 4800;     /* 100 ms minimum */
+    uint32_t silenceFrames   = 6000;     /* 125 ms at 48 kHz — snappier phrase end */
+    uint32_t minPhraseFrames = 3600;     /* 75 ms minimum — catch short greetings */
     uint32_t maxPhraseFrames = 576000;   /* 12 seconds maximum */
-    int      vadAggressiveness = 2;
+    int      vadAggressiveness = 1;      /* 1 = more sensitive, catches quiet speech */
 };
 
 class PhraseDetector {

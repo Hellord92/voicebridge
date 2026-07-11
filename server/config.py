@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     elevenlabs_api_key:  str = Field('', alias='ELEVENLABS_API_KEY')
     elevenlabs_voice_id: str = Field('21m00Tcm4TlvDq8ikWAM', alias='ELEVENLABS_VOICE_ID')
     groq_api_key:        str = Field('', alias='GROQ_API_KEY')
-    groq_translate_model: str = Field('llama-3.1-8b-instant', alias='GROQ_TRANSLATE_MODEL')
+    groq_translate_model: str = Field('llama-3.3-70b-versatile', alias='GROQ_TRANSLATE_MODEL')
     groq_stt_model:      str = Field('whisper-large-v3-turbo', alias='GROQ_STT_MODEL')
 
     # Premium tier (paid plans) — trial uses Groq only

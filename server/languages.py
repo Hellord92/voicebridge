@@ -85,3 +85,20 @@ def get_whisper_lang(code: str) -> str:  # Optional
 def get_el_lang(code: str) -> str:
     """Returns ElevenLabs language code (falls back to 'en')."""
     return LANGUAGES.get(code, {}).get("el_code", "en")
+
+
+def get_lang_name(code: str) -> str:
+    """Human-readable language name for LLM prompts."""
+    if code == "auto":
+        return "the source language"
+    return LANGUAGES.get(code, {}).get("name", code)
+
+
+# Whisper prompt hints — improves casual / meeting speech recognition (max ~224 tokens)
+WHISPER_PROMPTS: dict[str, str] = {
+    "tr": (
+        "Türkçe günlük konuşma, toplantı, samimi sohbet. "
+        "Ne haber, nasılsın, iyi misin, kanka, valla, falan, filan."
+    ),
+    "en": "Casual English conversation, meetings, everyday speech.",
+}
