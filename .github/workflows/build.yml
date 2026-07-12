@@ -1,9 +1,10 @@
 name: Build & Release
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
+    # Build is done locally via: bash scripts/build-dmg.sh
+    # DMG is uploaded manually to GitHub Releases.
+    # This workflow is kept for future CI use only.
 
 jobs:
   # ── macOS DMG ───────────────────────────────────────────────────────────────
