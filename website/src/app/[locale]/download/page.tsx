@@ -33,18 +33,17 @@ export default function DownloadPage() {
             <span className="mt-2 text-sm font-semibold text-sky-400">Download →</span>
           </a>
 
-          <a
-            href={`https://github.com/${GITHUB_REPO}/releases/latest/download/VoiceBridge-Setup.exe`}
-            className="group flex flex-col items-center gap-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-sky-500/40 rounded-2xl p-6 transition"
-          >
-            <span className="text-5xl group-hover:scale-110 transition-transform">🪟</span>
+          <div className="flex flex-col items-center gap-3 bg-slate-900/50 border border-slate-800 rounded-2xl p-6 opacity-60 cursor-not-allowed select-none">
+            <span className="text-5xl">🪟</span>
             <div>
-              <p className="text-lg font-bold">Windows</p>
-              <p className="text-sm text-slate-400">Windows 10 / 11 · 64-bit</p>
-              <p className="text-xs text-slate-500 mt-1">.exe installer</p>
+              <p className="text-lg font-bold text-slate-300">Windows</p>
+              <p className="text-sm text-slate-500">Windows 10 / 11 · 64-bit</p>
+              <p className="text-xs text-slate-600 mt-1">.exe installer</p>
             </div>
-            <span className="mt-2 text-sm font-semibold text-sky-400">Download →</span>
-          </a>
+            <span className="mt-2 text-xs font-semibold text-amber-400/80 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-full">
+              Coming next month
+            </span>
+          </div>
         </div>
 
         {/* Sign-in CTA */}
@@ -130,8 +129,8 @@ export default function DownloadPage() {
               <p>2 GB RAM minimum</p>
               <p>Internet connection required</p>
             </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
-              <p className="font-medium text-slate-300 mb-1">🪟 Windows</p>
+            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-3 opacity-50">
+              <p className="font-medium text-slate-400 mb-1">🪟 Windows <span className="text-xs text-amber-400 ml-1">coming soon</span></p>
               <p>Windows 10 / 11 (64-bit)</p>
               <p>VB-Audio Virtual Cable (auto-installed)</p>
               <p>2 GB RAM minimum</p>

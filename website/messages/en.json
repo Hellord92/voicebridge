@@ -18,7 +18,7 @@
 
   "stats_langs":     "100 Languages",
   "stats_latency":   "< 1s Latency",
-  "stats_platforms": "macOS + Windows",
+  "stats_platforms": "macOS (Windows soon)",
   "stats_trial":     "5-min Free Trial",
   "stats_secure":    "API Keys Protected",
 
@@ -26,7 +26,7 @@
   "how_sub":         "From install to live translation in under 60 seconds.",
   "how_1_step":      "01",
   "how_1_title":     "Install VoiceBridge",
-  "how_1_desc":      "Download for macOS or Windows. The virtual microphone driver installs automatically — no extra setup.",
+  "how_1_desc":      "Download for macOS. The virtual microphone driver installs automatically — no extra setup. Windows support coming soon.",
   "how_2_step":      "02",
   "how_2_title":     "Pick your meeting mic",
   "how_2_desc":      "In Zoom, Teams, WhatsApp Desktop, or Google Meet (browser) — select \"VoiceBridge Microphone\" as your input device.",
@@ -55,8 +55,8 @@
   "feat_3_desc":     "Works as a virtual microphone. No BlackHole, no Loopback, no audio routing nightmares.",
   "feat_4_title":    "API keys never exposed",
   "feat_4_desc":     "All AI calls go through our proxy. Your sensitive keys stay on our servers, not in the app.",
-  "feat_5_title":    "macOS & Windows",
-  "feat_5_desc":     "Native drivers for Apple Silicon, Intel Mac, and Windows 10/11. One installer handles everything.",
+  "feat_5_title":    "macOS — Windows Soon",
+  "feat_5_desc":     "Native CoreAudio driver for Apple Silicon and Intel Mac. Windows support arriving next month.",
   "feat_6_title":    "Minutes never expire",
   "feat_6_desc":     "Buy a pack once. Use them at your own pace — no monthly subscriptions, no surprise charges.",
 
