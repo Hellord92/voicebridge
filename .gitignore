@@ -47,3 +47,4 @@ server/voicebridge.db
 
 # Apple signing secrets
 .env.codesign
+.env.local_keys

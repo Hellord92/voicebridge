@@ -22,6 +22,32 @@ function trialSecondsFromLicense(data) {
   return FREE_TRIAL_SECONDS;
 }
 
+const TRIAL_STORAGE_KEY = 'vb_trial_state';
+
+function saveTrialState(secondsLeft) {
+  try {
+    localStorage.setItem(TRIAL_STORAGE_KEY, JSON.stringify({
+      secondsLeft,
+      savedAt: Date.now(),
+    }));
+  } catch (_) {}
+}
+
+function loadTrialState() {
+  try {
+    const raw = localStorage.getItem(TRIAL_STORAGE_KEY);
+    if (!raw) return null;
+    const { secondsLeft, savedAt } = JSON.parse(raw);
+    const elapsed = Math.floor((Date.now() - savedAt) / 1000);
+    const remaining = secondsLeft - elapsed;
+    return remaining > 0 ? remaining : 0;
+  } catch (_) { return null; }
+}
+
+function clearTrialState() {
+  try { localStorage.removeItem(TRIAL_STORAGE_KEY); } catch (_) {}
+}
+
 export default function App() {
   const { alert, confirm, toast } = useModal();
   const [firebaseUser, setFirebaseUser] = useState(undefined);
@@ -31,7 +57,7 @@ export default function App() {
   const [running, setRunning] = useState(false);
   const [licensed, setLicensed] = useState(false);
   const [licenseInfo, setLicenseInfo] = useState(null);
-  const [trialLeft, setTrialLeft] = useState(FREE_TRIAL_SECONDS);
+  const [trialLeft, setTrialLeft] = useState(() => loadTrialState() ?? FREE_TRIAL_SECONDS);
   const [trialActive, setTrialActive] = useState(false);
   const [status, setStatus] = useState('idle');
   const [statusMsg, setStatusMsg] = useState('Ready');
@@ -112,6 +138,7 @@ export default function App() {
   const showTrialEndedModal = useCallback(async () => {
     if (trialModalShown.current) return;
     trialModalShown.current = true;
+    clearTrialState();
     await alert({
       title: 'Free trial ended',
       message: 'Upgrade to continue translating in your meetings.',
@@ -344,10 +371,12 @@ export default function App() {
   useEffect(() => {
     if (!trialActive || licensed) return;
     if (trialLeft <= 0) {
+      clearTrialState();
       handleStop();
       showTrialEndedModal();
       return;
     }
+    saveTrialState(trialLeft);
     const t = setTimeout(() => setTrialLeft(n => n - 1), 1000);
     return () => clearTimeout(t);
   }, [trialActive, trialLeft, licensed, handleStop, showTrialEndedModal]);
@@ -425,9 +454,16 @@ export default function App() {
       const vrValid = vr.data?.valid ?? vr.ok;
       if (vrValid) {
         setLicenseInfo(vr.data);
-        const secs = trialSecondsFromLicense(vr.data);
+        const serverSecs = trialSecondsFromLicense(vr.data);
+        const localSecs  = loadTrialState();
+        /* Use the LOWER of server and local — prevents reset when server
+         * returns stale 300 (DEV_UNLIMITED_TRIAL=true on Railway) */
+        const secs = (serverSecs != null && localSecs != null)
+          ? Math.min(serverSecs, localSecs)
+          : (serverSecs ?? localSecs);
         if (secs != null) setTrialLeft(secs);
         if (vr.data?.free_trial && secs != null && secs <= 0) {
+          clearTrialState();
           await showTrialEndedModal();
           return;
         }

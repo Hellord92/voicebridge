@@ -101,7 +101,7 @@ export default function LicenseGate({ settings, licensed, licenseInfo, onActivat
             {/* Pricing table preview */}
             <div className="mb-4 space-y-1">
               {[
-                { name: 'Free',       min: '5 min/session', price: '$0'   },
+                { name: 'Free',       min: '5 min trial',   price: '$0'   },
                 { name: 'Starter',    min: '60 min',        price: '$99'  },
                 { name: 'Standard ★', min: '240 min',       price: '$329' },
                 { name: 'Enterprise', min: '600 min',       price: '$679' },
@@ -125,34 +125,37 @@ export default function LicenseGate({ settings, licensed, licenseInfo, onActivat
             </a>
 
             <div className="border-t border-slate-700 pt-4">
-              <label className="text-xs text-slate-400 block mb-1">Have a license key?</label>
-              <div className="relative mb-2">
-                <input
-                  type={showKey ? 'text' : 'password'}
-                  value={key}
-                  onChange={e => setKey(e.target.value)}
-                  placeholder="VB-T-A1B2C3-D4E5F6-ABCD"
-                  autoComplete="off"
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 pr-10 text-sm text-white outline-none focus:border-sky-400 font-mono"
-                />
-                <button
-                  type="button"
+              {settings?.licenseKey ? (
+                /* User already has a key — don't show input, just allow re-activation */
+                <p className="text-xs text-slate-500 text-center">Already have a key? <button
                   onClick={() => setShowKey(v => !v)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white px-1"
-                  aria-label={showKey ? 'Hide license key' : 'Show license key'}
-                >
-                  {showKey ? 'Hide' : 'Show'}
-                </button>
-              </div>
-              <button
-                onClick={handleActivate}
-                disabled={loading}
-                className="w-full py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold disabled:opacity-50 transition"
-              >
-                {loading ? 'Validating…' : 'Activate Key'}
-              </button>
-              {msg && (
-                <p className={`text-xs mt-2 ${msg.startsWith('✓') ? 'text-emerald-400' : 'text-rose-400'}`}>{msg}</p>
+                  className="text-sky-400 hover:underline"
+                >Enter a different one</button></p>
+              ) : null}
+              {(!settings?.licenseKey || showKey) && (
+                <>
+                  <label className="text-xs text-slate-400 block mb-1">Have a license key?</label>
+                  <div className="relative mb-2">
+                    <input
+                      type="text"
+                      value={key}
+                      onChange={e => setKey(e.target.value)}
+                      placeholder="VB-T-A1B2C3-D4E5F6-ABCD"
+                      autoComplete="off"
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-sky-400 font-mono"
+                    />
+                  </div>
+                  <button
+                    onClick={handleActivate}
+                    disabled={loading}
+                    className="w-full py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold disabled:opacity-50 transition"
+                  >
+                    {loading ? 'Validating…' : 'Activate Key'}
+                  </button>
+                  {msg && (
+                    <p className={`text-xs mt-2 ${msg.startsWith('✓') ? 'text-emerald-400' : 'text-rose-400'}`}>{msg}</p>
+                  )}
+                </>
               )}
             </div>
           </>
