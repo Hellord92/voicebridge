@@ -26,6 +26,12 @@ export default function PricingPage() {
   const [loading, setLoading]             = useState(false);
   const [result, setResult]               = useState<any>(null);
 
+  const effectiveEmail = email.trim() || account?.email?.trim() || '';
+
+  useEffect(() => {
+    if (account?.email && !email) setEmail(account.email);
+  }, [account?.email, email]);
+
   const handleBuy = async (planId: string) => {
     if (planId === 'free') { window.location.href = '/download'; return; }
     setSelectedPlan(planId);
@@ -33,7 +39,7 @@ export default function PricingPage() {
   };
 
   const handleCheckout = async () => {
-    if (!email || !selectedPlan) return;
+    if (!effectiveEmail || !selectedPlan) return;
     setLoading(true);
     try {
       const idToken = user ? await user.getIdToken() : undefined;
@@ -42,7 +48,7 @@ export default function PricingPage() {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           plan_id:         selectedPlan,
-          email,
+          email:           effectiveEmail,
           payment_method:  'crypto',
           crypto_currency: cryptoCoin,
           firebase_uid:    account?.uid ?? '',
@@ -178,7 +184,7 @@ export default function PricingPage() {
 
             <button
               onClick={handleCheckout}
-              disabled={loading || !email}
+              disabled={loading || !effectiveEmail}
               className="w-full py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-semibold transition disabled:opacity-50"
             >
               {loading ? 'Processing…' : 'Confirm Order'}
