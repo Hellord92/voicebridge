@@ -42,8 +42,8 @@ export default function PricingPage() {
     if (!effectiveEmail || !selectedPlan) return;
     setLoading(true);
     try {
-      const idToken = user ? await user.getIdToken() : undefined;
-      const res = await fetch('/api/checkout', {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://api.voicebridgeapps.com';
+      const res = await fetch(`${apiBase}/api/orders/create`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -52,14 +52,17 @@ export default function PricingPage() {
           payment_method:  'crypto',
           crypto_currency: cryptoCoin,
           firebase_uid:    account?.uid ?? '',
-          id_token:        idToken ?? '',
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Error');
+      const text = await res.text();
+      let data: any = {};
+      if (text) {
+        try { data = JSON.parse(text); } catch { throw new Error('Invalid server response'); }
+      }
+      if (!res.ok) throw new Error(data.detail || data.message || `Payment error (${res.status})`);
       setResult(data);
     } catch (e: any) {
-      setResult({ error: e.message });
+      setResult({ error: e?.message || 'Checkout failed' });
     } finally {
       setLoading(false);
     }
