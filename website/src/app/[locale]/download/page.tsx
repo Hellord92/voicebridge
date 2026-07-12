@@ -4,7 +4,7 @@ import { useAuth } from '../../../lib/auth';
 import clsx from 'clsx';
 
 const GITHUB_REPO = 'Hellord92/voicebridge';
-const LATEST_VERSION = '0.1.1';
+const LATEST_VERSION = '0.1.2';
 
 export default function DownloadPage() {
   const t = useTranslations();
