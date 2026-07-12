@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function GlossaryEditor({ items = [], onChange }) {
+export default function GlossaryEditor({ items = [], onChange, bare = false }) {
   const [source, setSource] = useState('');
   const [target, setTarget] = useState('');
 
@@ -16,11 +16,13 @@ export default function GlossaryEditor({ items = [], onChange }) {
   const remove = (idx) => onChange(items.filter((_, i) => i !== idx));
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-slate-300">Glossary</span>
-        <span className="text-[10px] text-slate-500">Proper nouns & terms</span>
-      </div>
+    <div className={bare ? 'pt-2 space-y-2' : 'rounded-xl border border-white/10 bg-white/[0.02] p-3 space-y-2'}>
+      {!bare && (
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-slate-300">Glossary</span>
+          <span className="text-[10px] text-slate-500">Proper nouns & terms</span>
+        </div>
+      )}
       {items.length > 0 && (
         <ul className="space-y-1 max-h-24 overflow-y-auto">
           {items.map((item, i) => (

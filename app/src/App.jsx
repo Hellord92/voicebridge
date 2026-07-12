@@ -52,6 +52,8 @@ export default function App() {
   const [sessionLines, setSessionLines] = useState([]);
   const [pttMode, setPttMode] = useState(false);
   const [pttHeld, setPttHeld] = useState(false);
+  const [meetingApps, setMeetingApps] = useState([]);
+  const [showGlossary, setShowGlossary] = useState(false);
   const pttRef = useRef(false);
   const realtimeTranslationBuffer = useRef('');
   const trialModalShown = useRef(false);
@@ -176,8 +178,8 @@ export default function App() {
             if (secs != null) setTrialLeft(secs);
           }
         }
-        setDevices(await window.vb.listDevices());
-        // Driver / virtual mic status — async, doesn't block startup
+        /* Never block UI on PortAudio scan — runs in isolated subprocess with timeout */
+        window.vb.listDevices().then(d => setDevices(d)).catch(() => {});
         window.vb.isDriverInstalled().then(drv => {
           setDriverInstalled(!!drv?.installed);
         }).catch(() => {});
@@ -367,18 +369,27 @@ export default function App() {
   }, [trialActive, licensed, settings?.licenseKey, handleStop, showTrialEndedModal]);
 
   useEffect(() => {
-    if (!running || !window.vb?.detectMeetingApps) return;
-    const iv = setInterval(async () => {
-      const { apps } = await window.vb.detectMeetingApps();
-      if (apps.length > 0) {
-        const driver = await window.vb.isDriverInstalled();
-        if (!driver.installed) {
-          toast(`${apps[0]} detected — install VoiceBridge Microphone first`, 'warning', 6000);
-        }
-      }
-    }, 30000);
+    if (!window.vb?.detectMeetingApps) return;
+    const poll = async () => {
+      try {
+        const { apps } = await window.vb.detectMeetingApps();
+        setMeetingApps(apps || []);
+      } catch (_) {}
+    };
+    poll();
+    const iv = setInterval(poll, 10000);
     return () => clearInterval(iv);
-  }, [running, toast]);
+  }, []);
+
+  useEffect(() => {
+    if (!running || !window.vb?.detectMeetingApps || meetingApps.length === 0) return;
+    (async () => {
+      const driver = await window.vb.isDriverInstalled();
+      if (!driver.installed) {
+        toast(`${meetingApps[0]} detected — install VoiceBridge Microphone first`, 'warning', 6000);
+      }
+    })();
+  }, [running, meetingApps, toast]);
 
   useEffect(() => {
     if (!running) return;
@@ -433,7 +444,7 @@ export default function App() {
       const install = await confirm({
         title: 'Virtual microphone required',
         message: 'VoiceBridge Microphone is not installed.',
-        detail: 'Meet and Zoom need this driver to hear translated speech.',
+        detail: 'Meet, Zoom, Teams, and WhatsApp need this driver to hear translated speech.',
         confirmLabel: 'Install now',
         cancelLabel: 'Continue anyway',
       });
@@ -677,7 +688,7 @@ export default function App() {
       </div>
 
       {showControls && (
-        <div className="flex-shrink-0 max-h-[38vh] overflow-y-auto px-5 space-y-3 py-2 border-b border-white/5">
+        <div className="flex-shrink-0 max-h-[40vh] overflow-y-auto px-5 space-y-2 py-2 border-b border-white/5">
           {showPlatform && <PlatformGuide />}
           <DeviceSelector
             selectedDeviceIndex={settings.inputDeviceIndex ?? -1}
@@ -721,25 +732,55 @@ export default function App() {
               }
             }}
           />
-          <LanguageSelector sourceLang={settings.sourceLang} targetLang={settings.targetLang} onChange={async (src, tgt) => {
-            const s = { ...settings, sourceLang: src, targetLang: tgt };
-            setSettings(s);
-            await window.vb.saveSettings(s);
-          }} />
-          <VoiceGenderSelector voiceGender={settings.voiceGender || 'female'} onChange={async (g) => {
-            const s = { ...settings, voiceGender: g };
-            setSettings(s);
-            await window.vb.saveSettings(s);
-          }} />
-          {!running && (
-            <GlossaryEditor
-              items={settings.glossary || []}
-              onChange={async (glossary) => {
-                const s = { ...settings, glossary };
+          <div className="glass-card p-3 space-y-2.5">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Language & Voice</p>
+            <LanguageSelector
+              compact
+              sourceLang={settings.sourceLang}
+              targetLang={settings.targetLang}
+              onChange={async (src, tgt) => {
+                const s = { ...settings, sourceLang: src, targetLang: tgt };
                 setSettings(s);
                 await window.vb.saveSettings(s);
               }}
             />
+            <VoiceGenderSelector
+              compact
+              voiceGender={settings.voiceGender || 'female'}
+              onChange={async (g) => {
+                const s = { ...settings, voiceGender: g };
+                setSettings(s);
+                await window.vb.saveSettings(s);
+              }}
+            />
+          </div>
+          {!running && (
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowGlossary(v => !v)}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors"
+              >
+                <span className="font-semibold text-slate-300">Glossary</span>
+                <span className="text-[10px] text-slate-500">
+                  {(settings.glossary || []).length > 0 ? `${settings.glossary.length} terms · ` : ''}
+                  {showGlossary ? 'Hide ▲' : 'Show ▼'}
+                </span>
+              </button>
+              {showGlossary && (
+                <div className="px-3 pb-3 border-t border-white/5">
+                  <GlossaryEditor
+                    bare
+                    items={settings.glossary || []}
+                    onChange={async (glossary) => {
+                      const s = { ...settings, glossary };
+                      setSettings(s);
+                      await window.vb.saveSettings(s);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -757,6 +798,12 @@ export default function App() {
       />
 
       <div className="px-5 pb-5 pt-2 space-y-2 flex-shrink-0 border-t border-white/5 bg-[#0a0a12]">
+        {!running && meetingApps.includes('WhatsApp') && (
+          <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200/90 leading-relaxed">
+            WhatsApp call detected — press <strong className="text-amber-100">Start Translation</strong> first,
+            then set WhatsApp microphone to <strong className="text-amber-100">VoiceBridge Microphone</strong>.
+          </div>
+        )}
         {!running ? (
           <div className="flex items-center gap-2">
             <button onClick={handleStart} className="btn-primary btn-pulse flex-1">Start Translation</button>

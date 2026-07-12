@@ -11,6 +11,7 @@
     "build": "vite build && electron-builder",
     "build:mac": "vite build && electron-builder --arm64 --mac dmg",
     "build:mac:signed": "vite build && electron-builder --arm64 --mac dmg --config.mac.notarize=false",
+    "build:dmg": "bash ../scripts/build-dmg.sh",
     "preview": "vite preview",
     "rebuild-core": "cd ../core && npm run build"
   },

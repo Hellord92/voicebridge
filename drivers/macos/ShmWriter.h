@@ -22,6 +22,12 @@ int vb_shm_open(void);
  */
 uint32_t vb_shm_write(const float *samples, uint32_t frameCount);
 
+/** Returns 1 if SHM ring is open and ready for writes, 0 otherwise. */
+int vb_shm_is_ready(void);
+
+/** Reset ring buffer positions (call when starting a new session). */
+void vb_shm_reset(void);
+
 /** Close and unmap shared memory. */
 void vb_shm_close(void);
 

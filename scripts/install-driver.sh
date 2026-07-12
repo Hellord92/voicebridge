@@ -47,6 +47,16 @@ sudo rm -rf "$DEST"
 sudo cp -R "$STAGING" "$DEST"
 rm -rf "$STAGING"
 
+# Re-sign installed copy (cp can break signatures on some macOS versions)
+if [[ -n "$CERT" ]]; then
+  echo "✍️   Re-signing installed driver at $DEST"
+  if sudo codesign --force --deep --strict --sign "$CERT" --timestamp "$DEST" 2>/dev/null; then
+    echo "✅  Installed driver signed"
+  else
+    echo "⚠️  Re-sign on $DEST failed"
+  fi
+fi
+
 # ── coreaudiod yeniden başlat ─────────────────────────────────────────────────
 echo "Reloading Core Audio..."
 if sudo killall coreaudiod 2>/dev/null; then
@@ -64,7 +74,10 @@ SPCTL_OUT="$(spctl -a -vv -t install "$DEST" 2>&1 || true)"
 if echo "$SPCTL_OUT" | grep -qi 'rejected'; then
   echo "🚫  Gatekeeper reddetti — driver dosyada ama CoreAudio yüklemiyor."
   echo "$SPCTL_OUT" | grep -E 'rejected|source=' | sed 's/^/    /'
-  if echo "$SPCTL_OUT" | grep -qi 'Unnotarized'; then
+  if echo "$SPCTL_OUT" | grep -qi 'no usable signature'; then
+    echo "    Developer ID ile imzala: export DEVELOPER_ID_APP=\"Developer ID Application: ...\""
+    echo "    Sonra tekrar: ./scripts/install-driver.sh"
+  elif echo "$SPCTL_OUT" | grep -qi 'Unnotarized'; then
     echo "    Notarize + staple sonrası tekrar kur:"
     echo "      xcrun stapler staple \"$SRC\""
     echo "      ./scripts/install-driver.sh"

@@ -102,9 +102,8 @@ typedef struct {
     VBSharedRing   *mRing;
     int             mShmFd;
 
-    /* underrun crossfade state (stereo float) */
-    float           mLastSampleL;
-    float           mLastSampleR;
+    /* underrun crossfade state (mono float) */
+    float           mLastSample;
 } VBDriver;
 
 static VBDriver *gDriver = NULL;
@@ -451,6 +450,8 @@ static Boolean VBDriver_HasProperty(AudioServerPlugInDriverRef inDriver,
                     case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
                     case kAudioDevicePropertyLatency:
                     case kAudioDevicePropertyStreams:
+                        return inAddress->mScope == kAudioObjectPropertyScopeInput
+                            || inAddress->mScope == kAudioObjectPropertyScopeGlobal;
                     case kAudioObjectPropertyControlList:
                     case kAudioDevicePropertySafetyOffset:
                     case kAudioDevicePropertyNominalSampleRate:
@@ -459,6 +460,10 @@ static Boolean VBDriver_HasProperty(AudioServerPlugInDriverRef inDriver,
                     case kAudioDevicePropertyZeroTimeStampPeriod:
                     case kAudioDevicePropertyPreferredChannelsForStereo:
                     case kAudioDevicePropertyPreferredChannelLayout:
+                        if (inAddress->mSelector == kAudioDevicePropertyPreferredChannelsForStereo
+                            || inAddress->mSelector == kAudioDevicePropertyPreferredChannelLayout) {
+                            return inAddress->mScope == kAudioObjectPropertyScopeInput;
+                        }
                         return true;
                     default: return false;
                 }
@@ -560,9 +565,19 @@ static OSStatus VBDriver_GetPropertyDataSize(AudioServerPlugInDriverRef inDriver
                 break;
             case kAudioObjectPropertyOwner:
             case kAudioObjectPropertyOwnedObjects:
-            case kAudioDevicePropertyStreams:
             case kAudioDevicePropertyRelatedDevices:
                 *outDataSize = sizeof(AudioObjectID);
+                break;
+            case kAudioDevicePropertyStreams:
+                switch (inAddress->mScope) {
+                    case kAudioObjectPropertyScopeGlobal:
+                    case kAudioObjectPropertyScopeInput:
+                        *outDataSize = sizeof(AudioObjectID);
+                        break;
+                    default:
+                        *outDataSize = 0;
+                        break;
+                }
                 break;
             case kAudioDevicePropertyTransportType:
             case kAudioDevicePropertyClockDomain:
@@ -781,10 +796,21 @@ static OSStatus VBDriver_GetPropertyData(AudioServerPlugInDriverRef inDriver,
                 *(UInt32 *)outData = 0;
                 *outDataSize = sizeof(UInt32);
                 break;
-            case kAudioDevicePropertyStreams:
-                *(AudioObjectID *)outData = d->mStreamInputObjectID;
-                *outDataSize = sizeof(AudioObjectID);
+            case kAudioDevicePropertyStreams: {
+                UInt32 n = inDataSize / (UInt32)sizeof(AudioObjectID);
+                switch (inAddress->mScope) {
+                    case kAudioObjectPropertyScopeGlobal:
+                    case kAudioObjectPropertyScopeInput:
+                        if (n < 1) return kAudioHardwareBadPropertySizeError;
+                        ((AudioObjectID *)outData)[0] = d->mStreamInputObjectID;
+                        *outDataSize = sizeof(AudioObjectID);
+                        break;
+                    default:
+                        *outDataSize = 0;
+                        break;
+                }
                 break;
+            }
             case kAudioObjectPropertyControlList:
                 *outDataSize = 0;
                 break;
@@ -1038,7 +1064,10 @@ static OSStatus VBDriver_DoIOOperation(AudioServerPlugInDriverRef inDriver,
     float   *dst         = (float *)ioMainBuffer;
 
     if (!d->mRing) {
-        memset(dst, 0, bytesNeeded);
+        /* SHM not mapped — fill with inaudible dither so Zoom doesn't say "not working" */
+        uint32_t framesTotal = bytesNeeded / VB_BYTES_PER_FRAME;
+        for (uint32_t f = 0; f < framesTotal; ++f)
+            dst[f] = 0.001f * ((f % 2 == 0) ? 1.0f : -1.0f);
         return kAudioHardwareNoError;
     }
 
@@ -1057,12 +1086,10 @@ static OSStatus VBDriver_DoIOOperation(AudioServerPlugInDriverRef inDriver,
             memcpy((uint8_t *)dst + tail, d->mRing->buf, bytesNeeded - tail);
         }
         atomic_store_explicit((_Atomic uint32_t *)&d->mRing->readPos, rp + bytesNeeded, memory_order_release);
-        /* track last sample for crossfade */
         uint32_t lastFrame = (bytesNeeded / VB_BYTES_PER_FRAME) - 1;
-        d->mLastSampleL = dst[lastFrame * 2];
-        d->mLastSampleR = dst[lastFrame * 2 + 1];
+        d->mLastSample = dst[lastFrame];
     } else if (avail > 0) {
-        /* partial read + 5ms crossfade to silence */
+        /* partial read + 5ms crossfade to silence (mono non-interleaved) */
         uint32_t ri   = rp % VB_BUF_BYTES;
         uint32_t tail = VB_BUF_BYTES - ri;
         if (tail >= avail) {
@@ -1077,31 +1104,30 @@ static OSStatus VBDriver_DoIOOperation(AudioServerPlugInDriverRef inDriver,
         uint32_t fadeFrames = framesTotal > framesRead
             ? (framesTotal - framesRead > 240 ? 240u : framesTotal - framesRead)
             : 0u;
-        float startL = framesRead > 0 ? dst[(framesRead - 1) * 2] : d->mLastSampleL;
-        float startR = framesRead > 0 ? dst[(framesRead - 1) * 2 + 1] : d->mLastSampleR;
+        float startSample = framesRead > 0 ? dst[framesRead - 1] : d->mLastSample;
         for (uint32_t f = 0; f < fadeFrames; ++f) {
             float t = 1.0f - ((float)(f + 1) / (float)(fadeFrames + 1));
-            uint32_t idx = framesRead + f;
-            dst[idx * 2]     = startL * t;
-            dst[idx * 2 + 1] = startR * t;
+            dst[framesRead + f] = startSample * t;
         }
         for (uint32_t f = framesRead + fadeFrames; f < framesTotal; ++f) {
-            dst[f * 2] = dst[f * 2 + 1] = 0.0f;
+            dst[f] = 0.0f;
         }
-        d->mLastSampleL = d->mLastSampleR = 0.0f;
+        d->mLastSample = 0.0f;
     } else {
-        /* underrun — 5ms crossfade from last sample to silence */
+        /* underrun — crossfade from last sample, then inaudible dither (-60 dBFS).
+         * Dither prevents Zoom/Meet from triggering "microphone not working" alert
+         * when the app is idle or not yet started. Pure silence triggers the alert. */
         uint32_t framesTotal = bytesNeeded / VB_BYTES_PER_FRAME;
         uint32_t fadeFrames = framesTotal > 240 ? 240u : framesTotal;
         for (uint32_t f = 0; f < fadeFrames; ++f) {
             float t = 1.0f - ((float)(f + 1) / (float)(fadeFrames + 1));
-            dst[f * 2]     = d->mLastSampleL * t;
-            dst[f * 2 + 1] = d->mLastSampleR * t;
+            dst[f] = d->mLastSample * t;
         }
         for (uint32_t f = fadeFrames; f < framesTotal; ++f) {
-            dst[f * 2] = dst[f * 2 + 1] = 0.0f;
+            /* alternating-polarity dither: -60 dBFS, inaudible, keeps mic "active" */
+            dst[f] = 0.001f * ((f % 2 == 0) ? 1.0f : -1.0f);
         }
-        d->mLastSampleL = d->mLastSampleR = 0.0f;
+        d->mLastSample = dst[framesTotal - 1];
     }
 
     return kAudioHardwareNoError;

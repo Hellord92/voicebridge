@@ -15,6 +15,7 @@ static VBAudioCapture          *gRawCapture    = nullptr;
 static Napi::ThreadSafeFunction gRawTsfn;
 static std::atomic<bool>        gRawRunning    {false};
 static std::atomic<bool>        gRawTsfnInit   {false}; /* guards Release() calls */
+static std::atomic<bool>        gRawMuted      {false};
 
 /* Accumulate ~100ms of audio (48kHz × 0.1s = 4800 frames) */
 static std::vector<float>       gRawAccum;
@@ -37,7 +38,7 @@ static std::vector<int16_t> resampleTo24kPCM16(const float *src, uint32_t frames
 
 static void rawCaptureCallback(const float *frames, uint32_t count, void * /*ud*/)
 {
-    if (!gRawRunning.load()) return;
+    if (!gRawRunning.load() || gRawMuted.load()) return;
     gRawAccum.insert(gRawAccum.end(), frames, frames + count);
     if (gRawAccum.size() < RAW_CHUNK_FRAMES) return;
 
@@ -168,6 +169,11 @@ Napi::Value StartPipeline(const Napi::CallbackInfo &info)
         };
     }
 
+    /* Stop any existing pipeline first to prevent TSFN leaks and double streams */
+    if (gPipeline) {
+        gPipeline->stop();
+        gPipeline.reset();
+    }
     gPipeline = std::make_unique<AudioPipeline>(cfg);
     int rc = gPipeline->start();
     return Napi::Number::New(env, rc);
@@ -203,14 +209,33 @@ Napi::Value SetVoiceGender(const Napi::CallbackInfo &info)
 
 Napi::Value MuteInput(const Napi::CallbackInfo &info)
 {
+    gRawMuted.store(true);
     if (gPipeline) gPipeline->muteInput();
     return info.Env().Undefined();
 }
 
 Napi::Value UnmuteInput(const Napi::CallbackInfo &info)
 {
+    gRawMuted.store(false);
     if (gPipeline) gPipeline->unmuteInput();
     return info.Env().Undefined();
+}
+
+Napi::Value OpenVirtualMic(const Napi::CallbackInfo &info)
+{
+    int rc = openVirtualMicShm();
+    return Napi::Number::New(info.Env(), rc);
+}
+
+Napi::Value PlayMp3ToShm(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsBuffer()) {
+        return Napi::Number::New(env, -1);
+    }
+    auto buf = info[0].As<Napi::Buffer<uint8_t>>();
+    int rc = playMp3ToVirtualMic(buf.Data(), buf.Length());
+    return Napi::Number::New(env, rc);
 }
 
 static Napi::Array DeviceInfosToArray(Napi::Env env, VBDeviceInfo devs[], int count)
@@ -255,6 +280,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     exports.Set("unmuteInput",      Napi::Function::New(env, UnmuteInput));
     exports.Set("startRawStream",   Napi::Function::New(env, StartRawStream));
     exports.Set("stopRawStream",    Napi::Function::New(env, StopRawStream));
+    exports.Set("openVirtualMic",   Napi::Function::New(env, OpenVirtualMic));
+    exports.Set("playMp3ToShm",     Napi::Function::New(env, PlayMp3ToShm));
     exports.Set("listInputDevices", Napi::Function::New(env, ListInputDevices));
     exports.Set("refreshDevices",   Napi::Function::New(env, RefreshDevices));
     return exports;

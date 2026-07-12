@@ -32,6 +32,12 @@ try {
       stopPipeline:     () => {},
       setLanguages:     () => {},
       setVoiceGender:   () => {},
+      muteInput:        () => {},
+      unmuteInput:      () => {},
+      startRawStream:   () => false,
+      stopRawStream:    () => {},
+      openVirtualMic:   () => -99,
+      playMp3ToShm:     () => -99,
       listInputDevices: () => [],
       refreshDevices:   () => [],
     };

@@ -1,6 +1,6 @@
 {
   "meta_title":      "VoiceBridge — Gerçek Zamanlı Ses Çevirisi",
-  "meta_description": "İstediğin dilde konuş, karşı taraf kendi dilinde duysun. Genelde 2 saniyenin altında. Zoom, Meet ve Teams ile çalışır.",
+  "meta_description": "İstediğin dilde konuş, karşı taraf kendi dilinde duysun. Genelde 1 saniyenin altında. Zoom, Meet, Teams ve WhatsApp Desktop ile çalışır.",
 
   "nav_how":         "Nasıl çalışır",
   "nav_pricing":     "Fiyatlar",
@@ -29,10 +29,22 @@
   "how_1_desc":      "macOS veya Windows için indir. Sanal mikrofon sürücüsü otomatik kurulur — ekstra kurulum gerekmez.",
   "how_2_step":      "02",
   "how_2_title":     "Toplantı Mikrofonunu Seç",
-  "how_2_desc":      "Zoom, Google Meet veya Teams'de giriş cihazı olarak \"VoiceBridge Microphone\" seç.",
+  "how_2_desc":      "Zoom, Teams, WhatsApp Desktop veya Google Meet (tarayıcı) içinde giriş cihazı olarak \"VoiceBridge Microphone\" seç.",
   "how_3_step":      "03",
   "how_3_title":     "Konuş. Karşı Taraf Duyar.",
   "how_3_desc":      "Kendi dilinde doğal şekilde konuş. Karşı taraf çevirilmiş sesi anında kendi dilinde duyar.",
+
+  "compat_title":    "Desteklenen uygulamalar",
+  "compat_sub":      "VoiceBridge Mac veya PC'ne sanal mikrofon kurar. Mikrofon seçimine izin veren her masaüstü uygulama ile çalışır.",
+  "compat_works_title": "Çalışır",
+  "compat_works_1":  "Zoom, Microsoft Teams, WhatsApp Desktop (Mac ve Windows)",
+  "compat_works_2":  "Chrome, Safari veya Edge'de Google Meet ve Teams — tarayıcıda mikrofonu seç",
+  "compat_works_3":  "Discord, Slack ve mikrofon seçici olan diğer masaüstü uygulamalar",
+  "compat_not_title": "Desteklenmez",
+  "compat_not_1":    "Mobil uygulamalar — iPhone / Android'de WhatsApp, Meet veya Zoom",
+  "compat_not_2":    "Telefon veya tablet — VoiceBridge yalnızca Mac ve Windows masaüstünde çalışır",
+  "compat_not_3":    "Mikrofon seçimi olmayan, yalnızca dahili mikrofona kilitlenen uygulamalar",
+  "compat_note":     "Aramadan önce VoiceBridge'te Start Translation'a bas, sonra toplantı uygulamasında VoiceBridge Microphone'u seç.",
 
   "features_title":  "Profesyonel toplantılar için tasarlandı",
   "feat_1_title":    "100 Dil",

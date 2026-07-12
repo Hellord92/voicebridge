@@ -3,28 +3,21 @@
 # Kullanım: ./scripts/sign-and-package.sh
 #
 # Önce .env.codesign dosyasını doldurun:
-#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD, DEVELOPER_ID_APP, DEVELOPER_ID_INSTALLER
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_SPECIFIC_PASSWORD, DEVELOPER_ID_APP
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_FILE="$ROOT/.env.codesign"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/_codesign-env.sh"
+load_codesign_env "$ROOT" || exit 1
 
-# ── 1. Environment yükle ───────────────────────────────────────────────────────
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "❌  $ENV_FILE bulunamadı."
-  echo "    Önce: cp .env.codesign.example .env.codesign  ve doldurun."
+[[ -z "${DEVELOPER_ID_APP:-}" ]] && { echo "❌  DEVELOPER_ID_APP eksik (.env.codesign)"; exit 1; }
+[[ -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -z "${APPLE_APP_PASSWORD:-}" ]] && {
+  echo "❌  APPLE_APP_SPECIFIC_PASSWORD veya APPLE_APP_PASSWORD eksik (.env.codesign)"
   exit 1
-fi
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-
-required_vars=(APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD DEVELOPER_ID_APP)
-for v in "${required_vars[@]}"; do
-  [[ -z "${!v:-}" ]] && { echo "❌  $v eksik (.env.codesign)"; exit 1; }
-done
+}
 
 echo "👤  Developer: $DEVELOPER_ID_APP"
-echo "🆔  Team ID:   $APPLE_TEAM_ID"
 
 # ── 2. Driver'ı derle (arm64) ──────────────────────────────────────────────────
 DRIVER_SRC="$ROOT/drivers/macos"
@@ -41,9 +34,8 @@ cmake --build "$DRIVER_BUILD" --config Release
 # ── 3. Driver'ı imzala ────────────────────────────────────────────────────────
 echo ""
 echo "✍️   Driver imzalanıyor..."
-# Hardened Runtime + Info.plist bağlama ile imzala
+# Hardened Runtime HAL plug-in'lerde sorun çıkarabilir (macOS 26) — kullanma
 codesign --force --deep --strict \
-  --options runtime \
   --sign "$DEVELOPER_ID_APP" \
   --timestamp \
   "$DRIVER_BUNDLE"
@@ -71,7 +63,7 @@ else
   xcrun notarytool submit "$DRIVER_ZIP" \
     --apple-id "$APPLE_ID" \
     --team-id  "$APPLE_TEAM_ID" \
-    --password "$APPLE_APP_PASSWORD" \
+    --password "${APPLE_APP_SPECIFIC_PASSWORD}" \
     --wait \
     --timeout "$NOTARY_TIMEOUT" \
     2>&1 | tee "$SUBMIT_OUT"
@@ -103,12 +95,6 @@ fi
 echo ""
 echo "🏗   Electron app build ediliyor..."
 cd "$ROOT/app"
-
-# electron-builder environment variables (otomatik kullanır)
-export CSC_IDENTITY_AUTO_DISCOVERY=true
-export APPLE_ID="$APPLE_ID"
-export APPLE_APP_SPECIFIC_PASSWORD="${APPLE_APP_PASSWORD}"
-export APPLE_TEAM_ID="$APPLE_TEAM_ID"
 
 # Önce Vite build
 npx vite build

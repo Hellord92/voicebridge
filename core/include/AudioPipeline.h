@@ -61,3 +61,9 @@ private:
     struct Impl;
     Impl *mImpl;
 };
+
+/** Open shared-memory ring for the virtual mic driver. */
+int openVirtualMicShm();
+
+/** Decode MP3 bytes (44.1kHz) and write resampled 48kHz PCM to virtual mic. */
+int playMp3ToVirtualMic(const uint8_t *data, size_t len);

@@ -73,28 +73,30 @@ static float computeRMS(const std::vector<float> &pcm)
 }
 
 /* Simple 44100 → 48000 linear resample for TTS output */
-static std::vector<float> resample441to48(const std::vector<float> &in)
+static std::vector<float> resampleTo48k(const std::vector<float> &in, int srcHz)
 {
     if (in.empty()) return {};
-    const double ratio = 48000.0 / 44100.0;
-    size_t outLen = (size_t)(in.size() * ratio);
+    if (srcHz == 48000) return in; /* already correct rate */
+    const double ratio = 48000.0 / (double)srcHz;
+    size_t outLen = (size_t)(in.size() * ratio + 0.5);
     std::vector<float> out(outLen);
     for (size_t i = 0; i < outLen; i++) {
         double src = i / ratio;
         size_t idx = (size_t)src;
         double frac = src - idx;
-        float a = in[std::min(idx, in.size() - 1)];
+        float a = in[std::min(idx,     in.size() - 1)];
         float b = in[std::min(idx + 1, in.size() - 1)];
         out[i] = (float)(a * (1.0 - frac) + b * frac);
     }
     return out;
 }
 
-static std::vector<float> decodeMp3(const std::string &mp3Bytes, bool streamToShm = false)
+static std::vector<float> decodeMp3(const std::string &mp3Bytes, bool streamToShm = false, int *outHz = nullptr)
 {
     mp3dec_t dec;
     mp3dec_init(&dec);
     std::vector<float> out;
+    int detectedHz = 44100; /* default fallback */
 
     const uint8_t *data = reinterpret_cast<const uint8_t *>(mp3Bytes.data());
     size_t         size = mp3Bytes.size();
@@ -106,6 +108,7 @@ static std::vector<float> decodeMp3(const std::string &mp3Bytes, bool streamToSh
         int samples = mp3dec_decode_frame(&dec, data + pos, (int)(size - pos), pcm, &info);
         if (info.frame_bytes == 0) break;
         pos += (size_t)info.frame_bytes;
+        if (info.hz > 0) detectedHz = info.hz;
 
         std::vector<float> frame(samples);
         for (int i = 0; i < samples; i++)
@@ -118,8 +121,64 @@ static std::vector<float> decodeMp3(const std::string &mp3Bytes, bool streamToSh
         }
         out.insert(out.end(), frame.begin(), frame.end());
     }
+    if (outHz) *outHz = detectedHz;
     return out;
 }
+
+/* Forward declarations for global keepalive coordination */
+#ifdef __APPLE__
+static std::atomic<bool> g_ttsActive{false};
+static std::atomic<bool> g_keepaliveRunning{false};
+static std::thread        g_keepaliveThread;
+static void globalKeepaliveLoop(); /* defined below */
+#endif
+
+#ifdef __APPLE__
+/** Pace 48 kHz mono PCM into the virtual mic ring at real-time rate. */
+static void streamPcmToVirtualMic(const std::vector<float> &pcm48, std::atomic<bool> &ttsGate)
+{
+    ttsGate.store(true);
+    g_ttsActive.store(true);
+    auto guard = std::shared_ptr<void>(nullptr, [&ttsGate](void*){
+        ttsGate.store(false);
+        g_ttsActive.store(false);
+    });
+
+    if (pcm48.empty()) return;
+
+    /* Skip if SHM not open (driver not installed). RAII guard above ensures ttsGate clears. */
+    if (!vb_shm_is_ready()) return;
+
+    const uint32_t kChunk   = 512u;   /* matches driver IO buffer */
+    const int      kMaxRetry = 500;   /* 500 × 2ms = 1 s max stall per chunk */
+    size_t offset = 0;
+
+    while (offset < pcm48.size()) {
+        uint32_t want    = (uint32_t)std::min<size_t>(kChunk, pcm48.size() - offset);
+        uint32_t written = 0;
+        int      retries = 0;
+
+        while (written < want) {
+            uint32_t n = vb_shm_write(pcm48.data() + offset + written, want - written);
+            if (n == 0) {
+                if (++retries > kMaxRetry) {
+                    /* Ring buffer stalled (driver stopped reading) — abort TTS */
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                continue;
+            }
+            retries = 0;
+            written += n;
+        }
+        offset += written;
+
+        /* Real-time pacing — keeps WhatsApp/Meet fed smoothly, not one burst */
+        std::this_thread::sleep_for(std::chrono::microseconds(
+            (written * 1000000u) / 48000u));
+    }
+}
+#endif
 
 /* ─────────────────── Impl ─────────────────────────────────── */
 struct AudioPipeline::Impl {
@@ -127,8 +186,10 @@ struct AudioPipeline::Impl {
     VBAudioCapture  *capture    = nullptr;
     PhraseDetector  *detector   = nullptr;
     std::atomic<bool> running         {false};
-    std::atomic<bool> ttsPlaying      {false}; /* mute-while-speaking gate */
-    std::atomic<bool> inputMuted      {false}; /* push-to-talk gate */
+    std::atomic<bool>    ttsPlaying   {false}; /* mute-while-speaking gate */
+    std::atomic<bool>    inputMuted  {false}; /* push-to-talk gate */
+    /* Timestamp (ms since epoch) when TTS last ended — used for echo cooldown */
+    std::atomic<int64_t> ttsEndMs    {0};
     std::mutex        langMutex;
     std::string       sourceLang;
     std::string       targetLang;
@@ -145,6 +206,9 @@ struct AudioPipeline::Impl {
     std::condition_variable   workCV;
     std::thread               workerThread;
     std::thread               workerThread2;
+#ifdef __APPLE__
+    std::thread               keepaliveThread;
+#endif
 
     explicit Impl(const PipelineConfig &c)
         : cfg(c), sourceLang(c.sourceLang), targetLang(c.targetLang),
@@ -167,6 +231,19 @@ struct AudioPipeline::Impl {
     void onPhrase(const float *pcm, uint32_t frames) {
         /* Drop phrase while TTS is playing to prevent echo feedback loop */
         if (ttsPlaying.load()) return;
+
+        /* Drop phrase during echo cooldown (700ms after TTS ends).
+         * Speaker echo from ElevenLabs output gets picked up by the mic — this
+         * prevents it from being transcribed and re-translated as garbage. */
+        int64_t endMs = ttsEndMs.load();
+        if (endMs > 0) {
+            int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            if (nowMs - endMs < 700) {
+                log("debug", "Dropped echo phrase (cooldown " + std::to_string(nowMs - endMs) + "ms after TTS)");
+                return;
+            }
+        }
         std::vector<float> copy(pcm, pcm + frames);
 
         /* Energy gate: skip near-silence before normalization amplifies it.
@@ -200,6 +277,36 @@ struct AudioPipeline::Impl {
             processPhrase(item.pcm, item.phraseEnd);
         }
     }
+
+#ifdef __APPLE__
+    /**
+     * Write near-silence (0.0001 amplitude) to the virtual mic SHM ring
+     * at 48 kHz real-time pace while TTS is NOT playing.
+     *
+     * Purpose: Zoom/Meet/Teams detect "microphone not working" when they
+     * receive complete silence for >2 seconds. This keepalive prevents that
+     * alert without producing audible sound on the far end.
+     */
+    void keepaliveLoop() {
+        /* Match driver IO buffer size (512 frames @ 48kHz ≈ 10.67ms) */
+        static const uint32_t kFrames = 512u;
+        /* -34 dBFS — above Zoom/Meet noise-removal threshold, inaudible in practice */
+        static const float    kAmp    = 0.020f;
+        float buf[kFrames];
+        /* Dithered near-silence: alternating polarity avoids DC offset */
+        for (uint32_t i = 0; i < kFrames; ++i)
+            buf[i] = kAmp * ((i % 2 == 0) ? 1.0f : -1.0f) * (0.5f + 0.5f * ((float)(i % 7) / 6.0f));
+
+        const auto kInterval = std::chrono::microseconds(10667); /* 512/48000 s */
+
+        while (running) {
+            if (!ttsPlaying.load()) {
+                vb_shm_write(buf, kFrames);
+            }
+            std::this_thread::sleep_for(kInterval);
+        }
+    }
+#endif
 
     /* Minimal base64 decoder */
     static std::string base64Decode(const std::string &in) {
@@ -396,23 +503,22 @@ struct AudioPipeline::Impl {
 
         std::string mp3 = base64Decode(sse.audioB64);
 
-        /* Stream-decode MP3 frames directly to virtual mic for lower TTFB */
-        auto pcmOut = decodeMp3(mp3, true);
+        int srcHz = 44100;
+        auto pcmOut = decodeMp3(mp3, false, &srcHz);
         if (pcmOut.empty()) return;
 
-        /* Resample 44.1kHz TTS → 48kHz driver rate */
-        auto pcm48 = resample441to48(pcmOut);
+        /* Resample TTS output (22050 or 44100Hz) → 48kHz driver rate */
+        auto pcm48 = resampleTo48k(pcmOut, srcHz);
         normalizePCM(pcm48);
 
-        /* Write TTS audio to virtual mic ring buffer.
-         * Gate closes only for the duration of the write (~1ms), not playback.
-         * TTS goes to Google Meet's virtual mic — not the user's speakers —
-         * so there is no acoustic echo loop to worry about. */
-        ttsPlaying.store(true);
+        /* Stream TTS to virtual mic at 48 kHz real-time pace.
+         * ttsPlaying stays true for full playback (mute-while-speaking). */
 #ifdef __APPLE__
-        vb_shm_write(pcm48.data(), (uint32_t)pcm48.size());
+        streamPcmToVirtualMic(pcm48, ttsPlaying);
+        /* Record TTS end time for echo cooldown in onPhrase */
+        ttsEndMs.store(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
 #endif
-        ttsPlaying.store(false);
 
         if (cfg.latencyCallback) {
             int ms = sse.processingMs;
@@ -441,7 +547,11 @@ int AudioPipeline::start()
         mImpl->log("warn",
             "Virtual mic driver not loaded — install VoiceBridgeAudio.driver and restart. "
             "Capture and translation will still run; Meet output needs the driver.");
+    } else {
+        vb_shm_reset();
     }
+    /* Hand off SHM ownership: stop global keepalive so only pipeline writes */
+    g_keepaliveRunning.store(false);
 #endif
 
     PhraseConfig pc;
@@ -468,10 +578,16 @@ int AudioPipeline::start()
     mImpl->running = true;
     mImpl->workerThread  = std::thread(&Impl::workerLoop, mImpl);
     mImpl->workerThread2 = std::thread(&Impl::workerLoop, mImpl);
+#ifdef __APPLE__
+    mImpl->keepaliveThread = std::thread(&Impl::keepaliveLoop, mImpl);
+#endif
     if (vb_capture_start(mImpl->capture, Impl::captureCallback, mImpl) != 0) {
         mImpl->running = false;
         if (mImpl->workerThread.joinable())  mImpl->workerThread.join();
         if (mImpl->workerThread2.joinable()) mImpl->workerThread2.join();
+#ifdef __APPLE__
+        if (mImpl->keepaliveThread.joinable()) mImpl->keepaliveThread.join();
+#endif
         vb_capture_destroy(mImpl->capture);
         mImpl->capture = nullptr;
         delete mImpl->detector;
@@ -504,9 +620,14 @@ void AudioPipeline::stop()
     // Join with timeout — workers check running flag and exit quickly
     if (mImpl->workerThread.joinable())  mImpl->workerThread.join();
     if (mImpl->workerThread2.joinable()) mImpl->workerThread2.join();
-
 #ifdef __APPLE__
-    vb_shm_close();
+    if (mImpl->keepaliveThread.joinable()) mImpl->keepaliveThread.join();
+    /* Resume global keepalive so Zoom/Meet still see an active mic after pipeline stops */
+    if (vb_shm_is_ready() && !g_keepaliveRunning.exchange(true)) {
+        g_keepaliveThread = std::thread(globalKeepaliveLoop);
+        g_keepaliveThread.detach();
+    }
+    /* Don't close SHM — global keepalive still needs it */
 #endif
 }
 
@@ -528,10 +649,40 @@ void AudioPipeline::setVoiceGender(const std::string &gender)
 void AudioPipeline::muteInput()   { mImpl->inputMuted.store(true);  }
 void AudioPipeline::unmuteInput() { mImpl->inputMuted.store(false); }
 
+/* ── Global SHM keepalive (runs from app start, independent of pipeline) ── */
+#ifdef __APPLE__
+/* g_keepaliveRunning, g_keepaliveThread, g_ttsActive declared at top of file */
+
+static void globalKeepaliveLoop()
+{
+    static const uint32_t kFrames = 512u;
+    /* -34 dBFS dithered tone — above Zoom/Meet noise-removal, inaudible to humans */
+    static const float kAmp = 0.020f;
+    float buf[kFrames];
+    for (uint32_t i = 0; i < kFrames; ++i)
+        buf[i] = kAmp * ((i % 2 == 0) ? 1.0f : -1.0f) * (0.5f + 0.5f * ((float)(i % 7) / 6.0f));
+
+    const auto kInterval = std::chrono::microseconds(10667); /* 512/48000 s */
+    while (g_keepaliveRunning.load()) {
+        /* Pause while TTS or pipeline keepalive is writing to avoid interleave */
+        if (!g_ttsActive.load()) {
+            vb_shm_write(buf, kFrames);
+        }
+        std::this_thread::sleep_for(kInterval);
+    }
+}
+#endif
+
 int openVirtualMicShm()
 {
 #ifdef __APPLE__
-    return vb_shm_open();
+    int rc = vb_shm_open();
+    if (rc == 0 && !g_keepaliveRunning.exchange(true)) {
+        vb_shm_reset();
+        g_keepaliveThread = std::thread(globalKeepaliveLoop);
+        g_keepaliveThread.detach(); /* runs until process exits */
+    }
+    return rc;
 #else
     return -1;
 #endif
@@ -547,11 +698,13 @@ int playMp3ToVirtualMic(const uint8_t *data, size_t len)
         shmReady = true;
     }
     std::string mp3(reinterpret_cast<const char *>(data), len);
-    auto pcmOut = decodeMp3(mp3, false);
+    int srcHz2 = 44100;
+    auto pcmOut = decodeMp3(mp3, false, &srcHz2);
     if (pcmOut.empty()) return 0;
-    auto pcm48 = resample441to48(pcmOut);
+    auto pcm48 = resampleTo48k(pcmOut, srcHz2);
     normalizePCM(pcm48);
-    vb_shm_write(pcm48.data(), (uint32_t)pcm48.size());
+    static std::atomic<bool> playGate{false};
+    streamPcmToVirtualMic(pcm48, playGate);
     return (int)pcm48.size();
 #else
     (void)data;

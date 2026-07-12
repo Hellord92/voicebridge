@@ -4,7 +4,7 @@ const { app, BrowserWindow, ipcMain, shell, systemPreferences } = require('elect
 const path  = require('path');
 const fs    = require('fs');
 const http  = require('http');
-const { execFile, execFileSync } = require('child_process');
+const { execFile, execFileSync, fork } = require('child_process');
 const Store = require('electron-store');
 const https = require('https');
 
@@ -68,7 +68,7 @@ function getServerUrl() {
     return PROD_API;
   }
   if (isDev) {
-    /* Dev builds talk to production API unless user set a custom backend */
+    /* Dev builds use production API (Railway) — DEV_UNLIMITED_TRIAL=true set on Railway */
     if (!stored || stored === PROD_API) return PROD_API;
     return stored;
   }
@@ -79,6 +79,67 @@ function getServerUrl() {
 
 const DRIVER_DEST = '/Library/Audio/Plug-Ins/HAL/VoiceBridgeAudio.driver';
 const DRIVER_BUNDLE_ID = 'com.voicebridge.audio.driver';
+
+const DEFAULT_INPUT_DEVICES = [{ index: -1, name: 'Default Microphone' }];
+
+function resolveCoreRequirePath() {
+  if (!isDev) {
+    const candidates = [
+      path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@voicebridge', 'core', 'index.js'),
+      path.join(app.getAppPath().replace('app.asar', 'app.asar.unpacked'), 'node_modules', '@voicebridge', 'core', 'index.js'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  }
+  try {
+    return require.resolve('@voicebridge/core');
+  } catch {
+    return path.join(__dirname, '../../core/index.js');
+  }
+}
+
+const CORE_REQUIRE_PATH = resolveCoreRequirePath();
+
+function listInputDevicesSafe(timeoutMs = 2500) {
+  if (!core || !CORE_REQUIRE_PATH) {
+    return Promise.resolve(DEFAULT_INPUT_DEVICES);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (devices, reason) => {
+      if (settled) return;
+      settled = true;
+      if (reason) console.warn('[main] listInputDevices:', reason);
+      resolve(Array.isArray(devices) && devices.length ? devices : DEFAULT_INPUT_DEVICES);
+    };
+
+    const child = fork(path.join(__dirname, 'device-list-fork.js'), [], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', VB_CORE_PATH: CORE_REQUIRE_PATH },
+      stdio: 'ignore',
+    });
+
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch (_) {}
+      finish(DEFAULT_INPUT_DEVICES, `timeout after ${timeoutMs}ms (CoreAudio wedged — restart Mac)`);
+    }, timeoutMs);
+
+    child.on('message', (msg) => {
+      clearTimeout(timer);
+      try { child.kill('SIGKILL'); } catch (_) {}
+      finish(msg?.devices, msg?.error);
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      finish(DEFAULT_INPUT_DEVICES, err.message);
+    });
+    child.on('exit', () => {
+      clearTimeout(timer);
+      if (!settled) finish(DEFAULT_INPUT_DEVICES, 'fork exited without result');
+    });
+  });
+}
 
 let core;
 try {
@@ -142,7 +203,9 @@ function createWindow(port) {
 
   if (isDev) {
     win.loadURL(VITE_DEV);
-    win.webContents.openDevTools({ mode: 'detach' });
+    if (process.env.OPEN_DEVTOOLS === '1') {
+      win.webContents.openDevTools({ mode: 'detach' });
+    }
   } else {
     /* Load from local HTTP server so Firebase auth works (localhost is whitelisted) */
     win.loadURL(`http://localhost:${port}`);
@@ -150,6 +213,13 @@ function createWindow(port) {
 }
 
 app.whenReady().then(async () => {
+  /* Open virtual mic SHM immediately so Zoom/Meet see an active mic from app start */
+  if (core?.openVirtualMic) {
+    const rc = core.openVirtualMic();
+    if (rc !== 0) console.warn('[main] openVirtualMic on startup returned', rc);
+    else console.log('[main] Virtual mic SHM keepalive started');
+  }
+
   if (!isDev) {
     const port = await startProdServer();
     createWindow(port);
@@ -207,130 +277,231 @@ function isDriverInstalledSync() {
   }
 }
 
-function verifyDriverMicSync() {
-  if (process.platform !== 'darwin') {
-    return { installed: false, visible: false, reason: 'not_macos' };
-  }
-  const installed = isDriverInstalledSync();
-  if (!installed.installed) {
-    return { installed: false, visible: false, reason: installed.reason || 'missing' };
+function checkDriverSignatureFast() {
+  if (!fs.existsSync(DRIVER_DEST)) {
+    return { accepted: false, gatekeeperRejected: false, noSignature: true, detail: 'missing' };
   }
   try {
-    const out = execFileSync('system_profiler', ['SPAudioDataType'], {
-      encoding: 'utf8',
-      timeout: 5000,
-      maxBuffer: 2 * 1024 * 1024,
-    });
-    const micVisible   = /voicebridge microphone/i.test(out);
-    const blackHole2ch = /blackhole 2ch/i.test(out);
+    let out = '';
+    try {
+      out = execFileSync('codesign', ['-dv', DRIVER_DEST], { encoding: 'utf8', timeout: 1500 });
+    } catch (e) {
+      /* codesign -dv prints to stderr and may exit non-zero */
+      out = [e.stdout, e.stderr].filter(Boolean).join('\n');
+    }
+    const hasTeam = /TeamIdentifier=323TN47N72/.test(out);
+    const adhoc = /Signature=adhoc/i.test(out);
     return {
-      installed:   true,
-      visible:     micVisible,
-      micVisible,
-      blackHole2ch,
-      reason:      micVisible ? 'ok' : (blackHole2ch ? 'use_blackhole' : 'not_in_system_profiler'),
+      accepted: hasTeam && !adhoc,
+      gatekeeperRejected: false,
+      noSignature: adhoc,
+      unnotarized: false,
+      detail: hasTeam && !adhoc ? 'signed' : 'adhoc_or_unsigned',
     };
-  } catch (e) {
-    return { installed: true, visible: false, reason: 'profiler_failed', error: e.message };
+  } catch {
+    return {
+      accepted: false,
+      gatekeeperRejected: false,
+      noSignature: true,
+      unnotarized: false,
+      detail: 'codesign_failed',
+    };
   }
 }
 
-function verifyDriverMicAsync() {
-  return new Promise((resolve) => {
-    if (process.platform !== 'darwin') {
-      return resolve({ installed: false, visible: false, reason: 'not_macos' });
-    }
-    const installed = isDriverInstalledSync();
-    if (!installed.installed) {
-      return resolve({ installed: false, visible: false, reason: installed.reason || 'missing' });
-    }
-    execFile('system_profiler', ['SPAudioDataType'], {
-      encoding: 'utf8',
-      timeout: 6000,
-      maxBuffer: 2 * 1024 * 1024,
-    }, (err, out) => {
-      if (err) return resolve({ installed: true, visible: false, reason: 'profiler_failed', error: err.message });
-      const micVisible   = /voicebridge microphone/i.test(out);
-      const blackHole2ch = /blackhole 2ch/i.test(out);
-      resolve({
-        installed: true,
-        visible:   micVisible,
-        micVisible,
-        blackHole2ch,
-        reason: micVisible ? 'ok' : (blackHole2ch ? 'use_blackhole' : 'not_in_system_profiler'),
-      });
-    });
+let _driverMicCache = null;
+let _driverMicCacheAt = 0;
+let _driverMicInflight = null;
+const DRIVER_MIC_CACHE_MS = 60000;
+
+function execFileAsync(cmd, args, timeoutMs = 2500) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      cmd,
+      args,
+      { encoding: 'utf8', maxBuffer: 2 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) reject(Object.assign(err, { stdout, stderr }));
+        else resolve(stdout);
+      },
+    );
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch (_) {}
+      reject(new Error(`timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+    child.on('close', () => clearTimeout(timer));
   });
+}
+
+function parseProfilerAudioText(out) {
+  const text = String(out || '');
+  const micVisible = /voicebridge microphone/i.test(text);
+  const wrongScope = /voicebridge microphone[\s\S]{0,400}coreaudio_device_output:\s*1/i.test(text)
+    && !/voicebridge microphone[\s\S]{0,400}coreaudio_device_input:\s*1/i.test(text);
+  const blackHole2ch = /blackhole 2ch/i.test(text);
+  return { micVisible, wrongScope, blackHole2ch };
+}
+
+async function queryAudioDevicesFast() {
+  /* Full SPAudioDataType -json can hang CoreAudio — use mini + hard timeout only */
+  try {
+    const out = await execFileAsync(
+      'system_profiler',
+      ['-detailLevel', 'mini', 'SPAudioDataType'],
+      2500,
+    );
+    return { ...parseProfilerAudioText(out), profiler: 'mini' };
+  } catch (e) {
+    console.warn('[main] system_profiler mini failed:', e.message);
+    return { micVisible: false, wrongScope: false, blackHole2ch: false, profiler: 'failed', error: e.message };
+  }
+}
+
+async function verifyDriverMicAsync() {
+  if (_driverMicInflight) return _driverMicInflight;
+  _driverMicInflight = verifyDriverMicImpl().finally(() => { _driverMicInflight = null; });
+  return _driverMicInflight;
+}
+
+async function verifyDriverMicImpl() {
+  if (process.platform !== 'darwin') {
+    return { installed: false, visible: false, reason: 'not_macos' };
+  }
+  const now = Date.now();
+  if (_driverMicCache && now - _driverMicCacheAt < DRIVER_MIC_CACHE_MS) {
+    return _driverMicCache;
+  }
+
+  const installed = isDriverInstalledSync();
+  if (!installed.installed) {
+    const result = { installed: false, visible: false, micVisible: false, reason: installed.reason || 'missing' };
+    _driverMicCache = result;
+    _driverMicCacheAt = now;
+    return result;
+  }
+
+  const sig = checkDriverSignatureFast();
+
+  /* Signed driver on disk = treat as ready. system_profiler hangs when CoreAudio is wedged. */
+  if (sig.accepted) {
+    const result = {
+      installed: true,
+      visible: true,
+      micVisible: true,
+      gatekeeper: sig,
+      reason: 'installed_signed',
+      profiler: 'skipped',
+    };
+    _driverMicCache = result;
+    _driverMicCacheAt = now;
+    return result;
+  }
+
+  const audio = await queryAudioDevicesFast();
+  let micVisible = audio.micVisible;
+  let reason = micVisible ? 'ok' : 'not_in_system_profiler';
+
+  if (!micVisible) {
+    if (sig.noSignature) reason = 'no_signature';
+    else if (audio.wrongScope) reason = 'registered_as_output';
+    else if (audio.blackHole2ch) reason = 'use_blackhole';
+    else if (audio.profiler === 'failed') reason = 'profiler_timeout';
+  }
+
+  const result = {
+    installed: true,
+    visible: micVisible,
+    micVisible,
+    wrongScope: audio.wrongScope,
+    blackHole2ch: audio.blackHole2ch,
+    gatekeeper: sig,
+    reason,
+    profiler: audio.profiler,
+  };
+  _driverMicCache = result;
+  _driverMicCacheAt = now;
+  return result;
+}
+
+function verifyDriverMicSync() {
+  /* IPC paths that still call sync — never block on system_profiler */
+  if (_driverMicCache && Date.now() - _driverMicCacheAt < DRIVER_MIC_CACHE_MS) {
+    return _driverMicCache;
+  }
+  const installed = isDriverInstalledSync();
+  if (!installed.installed) {
+    return { installed: false, visible: false, micVisible: false, reason: installed.reason || 'missing' };
+  }
+  const sig = checkDriverSignatureFast();
+  return {
+    installed: true,
+    visible: sig.accepted,
+    micVisible: sig.accepted,
+    gatekeeper: sig,
+    reason: sig.accepted ? 'installed_assumed_visible' : (sig.noSignature ? 'no_signature' : 'gatekeeper_rejected'),
+    stale: true,
+  };
 }
 
 function shellQuote(s) {
   return `'${String(s).replace(/'/g, "'\\''")}'`;
 }
 
-function installMacDriverAsync() {
+function installMacDriverViaScriptAsync() {
+  const scriptPath = path.join(__dirname, '../../scripts/install-driver.sh');
+  if (!fs.existsSync(scriptPath)) {
+    return Promise.resolve({
+      ok: false,
+      error: 'install-driver.sh not found — run from repo: sudo ./scripts/install-driver.sh',
+    });
+  }
   return new Promise((resolve) => {
-    if (process.platform !== 'darwin') {
-      resolve({ ok: false, error: 'macOS only' });
-      return;
-    }
-    const driverSrc = resolveDriverSourcePath();
-    const macosDriverDir = path.join(__dirname, '../../drivers/macos');
-    if (!driverSrc) {
-      resolve({
-        ok: false,
-        error: isDev
-          ? 'Build driver first: cd drivers/macos && cmake -B build && cmake --build build'
-          : 'Driver bundle not found in app resources',
-      });
-      return;
-    }
-
-    const staging = '/tmp/VoiceBridgeAudio-staging.driver';
-    try {
-      fs.rmSync(staging, { recursive: true, force: true });
-      fs.cpSync(driverSrc, staging, { recursive: true });
-    } catch (e) {
-      resolve({
-        ok: false,
-        error: `Driver hazırlanamadı: ${e.message}. Terminal: ./scripts/install-driver.sh`,
-      });
-      return;
-    }
-
-    /* Admin shell cannot read ~/Documents — stage under /tmp first (TCC) */
-    const script = [
-      `rm -rf ${shellQuote(DRIVER_DEST)}`,
-      `cp -R ${shellQuote(staging)} ${shellQuote(DRIVER_DEST)}`,
-      'killall coreaudiod 2>/dev/null || launchctl kickstart -kp system/com.apple.audio.coreaudiod 2>/dev/null || true',
-      `rm -rf ${shellQuote(staging)}`,
-    ].join(' && ');
-
     execFile(
       'osascript',
-      ['-e', `do shell script ${JSON.stringify(script)} with administrator privileges`],
-      (err, _stdout, stderr) => {
-        fs.rmSync(staging, { recursive: true, force: true });
+      ['-e', `do shell script ${JSON.stringify(`bash ${scriptPath}`)} with administrator privileges`],
+      { timeout: 120000, maxBuffer: 4 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        const output = [stdout, stderr].filter(Boolean).join('\n');
         if (err) {
-          const msg = [err.message, stderr].filter(Boolean).join('\n');
           resolve({
             ok: false,
-            error: msg.includes('Operation not permitted')
-              ? `${msg}\n\nmacOS Documents klasörünü admin erişemez. Terminalde: ./scripts/install-driver.sh`
-              : msg,
+            error: [err.message, output].filter(Boolean).join('\n'),
             needsLogout: false,
           });
           return;
         }
         const check = isDriverInstalledSync();
-        verifyDriverMicAsync().then(mic => resolve({
-          ok: check.installed,
-          micVisible: mic.visible,
-          error: check.installed ? null : 'Kopyalama başarısız — Terminal: ./scripts/install-driver.sh',
-          needsLogout: check.installed && !mic.visible,
-        }));
-      }
+        _driverMicCache = null;
+        verifyDriverMicAsync().then((mic) => {
+          resolve({
+            ok: check.installed,
+            micVisible: mic.visible,
+            reason: mic.reason,
+            gatekeeper: mic.gatekeeper,
+            output,
+            error: check.installed && !mic.visible
+              ? (mic.reason === 'no_signature' || mic.reason === 'gatekeeper_rejected'
+                ? 'Driver copied but macOS blocked it — use Terminal: sudo ./scripts/install-driver.sh'
+                : 'Driver installed — open Sound Settings or restart Mac')
+              : (check.installed ? null : 'Install failed — Terminal: sudo ./scripts/install-driver.sh'),
+            needsLogout: check.installed && !mic.visible,
+          });
+        }).catch((e) => {
+          resolve({
+            ok: check.installed,
+            micVisible: false,
+            reason: 'verify_failed',
+            error: e.message,
+            needsLogout: check.installed,
+          });
+        });
+      },
     );
   });
+}
+
+function installMacDriverAsync() {
+  return installMacDriverViaScriptAsync();
 }
 
 /* ─────────────────── IPC ─────────────────── */
@@ -419,19 +590,11 @@ ipcMain.handle('save-settings', async (_e, settings) => {
   return { ok: true };
 });
 
-ipcMain.handle('list-devices', async () => {
-  if (!core) return [{ index: -1, name: 'Default Microphone' }];
-  return core.listInputDevices();
-});
+ipcMain.handle('list-devices', async () => listInputDevicesSafe(2500));
 
 ipcMain.handle('refresh-devices', async () => {
-  if (!core) return ['Default Microphone'];
-  try {
-    return core.refreshDevices();
-  } catch (e) {
-    console.warn('[main] refreshDevices failed:', e.message);
-    return core.listInputDevices();
-  }
+  const devices = await listInputDevicesSafe(4000);
+  return devices;
 });
 
 ipcMain.handle('start-pipeline', async (_e, opts) => {
@@ -823,7 +986,7 @@ ipcMain.handle('export-session', async (_e, data) => {
   return { ok: true, path: filePath };
 });
 
-function httpPost(url, body, extraHeaders = {}) {
+function httpPost(url, body, extraHeaders = {}, timeoutMs = 12000) {
   return new Promise((resolve) => {
     const parsed   = new URL(url);
     const bodyStr  = body ? JSON.stringify(body) : '';
@@ -833,6 +996,12 @@ function httpPost(url, body, extraHeaders = {}) {
       ...extraHeaders,
     };
     const mod = parsed.protocol === 'https:' ? https : require('http');
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
     const req = mod.request(
       { hostname: parsed.hostname, port: parsed.port || undefined, path: parsed.pathname + (parsed.search || ''), method: 'POST', headers },
       (res) => {
@@ -841,7 +1010,7 @@ function httpPost(url, body, extraHeaders = {}) {
         res.on('end', () => {
           const processingMs = res.headers['x-processing-ms'];
           if (!data.trim()) {
-            resolve({
+            finish({
               ok: false,
               status: res.statusCode,
               error: `Empty response (HTTP ${res.statusCode})`,
@@ -850,7 +1019,7 @@ function httpPost(url, body, extraHeaders = {}) {
           }
           try {
             const parsedJson = JSON.parse(data);
-            resolve({
+            finish({
               ok: res.statusCode >= 200 && res.statusCode < 300,
               status: res.statusCode,
               data: parsedJson,
@@ -858,7 +1027,7 @@ function httpPost(url, body, extraHeaders = {}) {
             });
           } catch {
             const preview = data.replace(/\s+/g, ' ').slice(0, 160);
-            resolve({
+            finish({
               ok: false,
               status: res.statusCode,
               error: `Server returned non-JSON (HTTP ${res.statusCode}): ${preview}`,
@@ -867,7 +1036,11 @@ function httpPost(url, body, extraHeaders = {}) {
         });
       }
     );
-    req.on('error', e => resolve({ ok: false, error: e.message }));
+    req.on('error', e => finish({ ok: false, error: e.message }));
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      finish({ ok: false, error: `Request timeout (${timeoutMs}ms)` });
+    });
     if (bodyStr) req.write(bodyStr);
     req.end();
   });

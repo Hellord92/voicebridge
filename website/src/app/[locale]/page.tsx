@@ -111,6 +111,7 @@ export default function HomePage() {
       <Stats t={t} />
       <BusinessStats />
       <HowItWorks t={t} />
+      <PlatformCompatibility t={t} />
       <UseCases />
       <NoInterpreterNeeded />
       <Features t={t} />
@@ -554,6 +555,59 @@ function HowItWorks({ t }: { t: ReturnType<typeof useTranslations> }) {
             </FadeUp>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Platform compatibility ───────────────────────────────────────────────── */
+function PlatformCompatibility({ t }: { t: ReturnType<typeof useTranslations> }) {
+  const works = [t('compat_works_1'), t('compat_works_2'), t('compat_works_3')];
+  const notSupported = [t('compat_not_1'), t('compat_not_2'), t('compat_not_3')];
+  return (
+    <section id="compatibility" className="py-20 px-6">
+      <div className="max-w-5xl mx-auto">
+        <FadeUp className="text-center mb-12">
+          <h2 className="text-3xl md:text-5xl font-extrabold mb-4">{t('compat_title')}</h2>
+          <p className="text-slate-400 text-lg max-w-2xl mx-auto">{t('compat_sub')}</p>
+        </FadeUp>
+        <div className="grid md:grid-cols-2 gap-5">
+          <FadeUp delay={0.05}>
+            <div className="rounded-2xl p-6 h-full border border-emerald-500/20 bg-emerald-500/5">
+              <h3 className="font-bold text-emerald-300 mb-4 flex items-center gap-2">
+                <span className="text-lg">✓</span> {t('compat_works_title')}
+              </h3>
+              <ul className="space-y-3">
+                {works.map(item => (
+                  <li key={item} className="text-sm text-slate-300 flex gap-2">
+                    <span className="text-emerald-400 flex-shrink-0">•</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </FadeUp>
+          <FadeUp delay={0.1}>
+            <div className="rounded-2xl p-6 h-full border border-amber-500/20 bg-amber-500/5">
+              <h3 className="font-bold text-amber-300 mb-4 flex items-center gap-2">
+                <span className="text-lg">✕</span> {t('compat_not_title')}
+              </h3>
+              <ul className="space-y-3">
+                {notSupported.map(item => (
+                  <li key={item} className="text-sm text-slate-300 flex gap-2">
+                    <span className="text-amber-400 flex-shrink-0">•</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </FadeUp>
+        </div>
+        <FadeUp delay={0.15} className="mt-5">
+          <p className="text-center text-sm text-cyan-300/80 bg-cyan-500/8 border border-cyan-400/20 rounded-xl px-4 py-3">
+            {t('compat_note')}
+          </p>
+        </FadeUp>
       </div>
     </section>
   );

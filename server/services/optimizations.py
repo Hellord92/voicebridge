@@ -100,7 +100,7 @@ async def synthesize_streaming(
             'style':             0.0,
             'use_speaker_boost': True,
         },
-        'output_format': 'mp3_44100_64',
+        'output_format': 'mp3_44100_128',  # 44.1kHz 128kbps — clean speech quality
         'optimize_streaming_latency': 4,  # max latency reduction
     }
 
@@ -146,7 +146,7 @@ async def synthesize_streaming_chunks(
             'style':             0.0,
             'use_speaker_boost': True,
         },
-        'output_format': 'mp3_44100_64',
+        'output_format': 'mp3_44100_128',  # 44.1kHz 128kbps — clean speech quality
         'optimize_streaming_latency': 4,  # max latency reduction
     }
 

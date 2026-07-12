@@ -1,10 +1,12 @@
 'use client';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '../../../lib/auth';
 import clsx from 'clsx';
 
 const GITHUB_REPO = 'Hellord92/voicebridge';
 
 export default function DownloadPage() {
+  const t = useTranslations();
   const { user, account, signInGoogle } = useAuth();
 
   return (
@@ -64,6 +66,33 @@ export default function DownloadPage() {
             ✓ Signed in as <strong>{account?.email}</strong> — your license will sync automatically.
           </div>
         )}
+
+        {/* Platform compatibility */}
+        <div className="mt-14 text-left">
+          <h2 className="text-xl font-bold mb-2">{t('compat_title')}</h2>
+          <p className="text-sm text-slate-400 mb-5">{t('compat_sub')}</p>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4">
+              <p className="font-semibold text-emerald-300 mb-3">✓ {t('compat_works_title')}</p>
+              <ul className="space-y-2 text-sm text-slate-300">
+                <li>• {t('compat_works_1')}</li>
+                <li>• {t('compat_works_2')}</li>
+                <li>• {t('compat_works_3')}</li>
+              </ul>
+            </div>
+            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
+              <p className="font-semibold text-amber-300 mb-3">✕ {t('compat_not_title')}</p>
+              <ul className="space-y-2 text-sm text-slate-300">
+                <li>• {t('compat_not_1')}</li>
+                <li>• {t('compat_not_2')}</li>
+                <li>• {t('compat_not_3')}</li>
+              </ul>
+            </div>
+          </div>
+          <p className="mt-4 text-sm text-cyan-300/80 bg-cyan-500/8 border border-cyan-400/20 rounded-xl px-4 py-3">
+            {t('compat_note')}
+          </p>
+        </div>
 
         {/* Setup steps */}
         <div className="mt-14 text-left">

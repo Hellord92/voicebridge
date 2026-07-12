@@ -13,11 +13,19 @@ static int           g_fd   = -1;
 
 int vb_shm_open(void)
 {
-    g_fd = shm_open(VB_SHM_NAME, O_RDWR | O_CREAT, 0666);
-    if (g_fd < 0) return -1;
+    if (g_ring != NULL) return 0; /* already open — prevent double-open fd leak */
 
-    if (ftruncate(g_fd, (off_t)sizeof(VBSharedRing)) < 0) {
-        close(g_fd); g_fd = -1; return -1;
+    /* Try to attach to an existing SHM segment first (driver may have created it).
+     * ftruncate on an already-mmap'd SHM fails with EINVAL on macOS, so we only
+     * call it when WE are creating the segment for the first time. */
+    g_fd = shm_open(VB_SHM_NAME, O_RDWR, 0666);
+    if (g_fd < 0) {
+        /* SHM doesn't exist yet — create it and size it */
+        g_fd = shm_open(VB_SHM_NAME, O_RDWR | O_CREAT, 0666);
+        if (g_fd < 0) return -1;
+        if (ftruncate(g_fd, (off_t)sizeof(VBSharedRing)) < 0) {
+            close(g_fd); g_fd = -1; return -1;
+        }
     }
 
     g_ring = (VBSharedRing *)mmap(NULL, sizeof(VBSharedRing),
@@ -57,6 +65,17 @@ uint32_t vb_shm_write(const float *samples, uint32_t frameCount)
                           wp + byteCount, memory_order_release);
     return byteCount / 4u;
 }
+
+void vb_shm_reset(void)
+{
+    if (!g_ring) return;
+    /* Align writePos to driver's current readPos — discards stale buffered audio
+     * without resetting readPos, which the driver manages independently. */
+    uint32_t rp = atomic_load_explicit((_Atomic uint32_t *)&g_ring->readPos, memory_order_acquire);
+    atomic_store_explicit((_Atomic uint32_t *)&g_ring->writePos, rp, memory_order_release);
+}
+
+int vb_shm_is_ready(void) { return g_ring != NULL; }
 
 void vb_shm_close(void)
 {
