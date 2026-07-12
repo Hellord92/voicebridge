@@ -448,37 +448,44 @@ function shellQuote(s) {
 }
 
 function installMacDriverViaScriptAsync() {
-  // In packaged app: script + driver are in process.resourcesPath
-  const scriptPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'scripts', 'install-driver.sh')
-    : path.join(__dirname, '../../scripts/install-driver.sh');
+  const DEST = '/Library/Audio/Plug-Ins/HAL/VoiceBridgeAudio.driver';
 
+  // Resolve driver source: bundled in Resources when packaged, repo path in dev
   const driverSrc = app.isPackaged
     ? path.join(process.resourcesPath, 'VoiceBridgeAudio.driver')
-    : null; // dev: script finds it relative to repo root
+    : path.join(__dirname, '../../drivers/macos/build/VoiceBridgeAudio.driver');
 
-  if (!fs.existsSync(scriptPath)) {
+  if (!fs.existsSync(driverSrc)) {
     return Promise.resolve({
       ok: false,
-      error: 'install-driver.sh not found inside app bundle.',
+      error: `Driver bundle not found at: ${driverSrc}`,
     });
   }
-  // Pass driver source as $1 so the script doesn't need the repo structure
-  const shellCmd = driverSrc
-    ? `bash ${shellQuote(scriptPath)} ${shellQuote(driverSrc)}`
-    : `bash ${shellQuote(scriptPath)}`;
+
+  // Inline shell — no external script needed.
+  // osascript runs this as root via "with administrator privileges".
+  // Semicolons on coreaudiod restart so a failure doesn't abort the whole install.
+  const cmds = [
+    `rm -rf ${shellQuote(DEST)}`,
+    `cp -R ${shellQuote(driverSrc)} ${shellQuote(DEST)}`,
+    `killall coreaudiod 2>/dev/null; launchctl kickstart -kp system/com.apple.audio.coreaudiod 2>/dev/null; true`,
+    `sleep 2`,
+  ].join(' && ');
 
   return new Promise((resolve) => {
     execFile(
       'osascript',
-      ['-e', `do shell script ${JSON.stringify(shellCmd)} with administrator privileges`],
+      ['-e', `do shell script ${JSON.stringify(cmds)} with administrator privileges`],
       { timeout: 120000, maxBuffer: 4 * 1024 * 1024 },
       (err, stdout, stderr) => {
         const output = [stdout, stderr].filter(Boolean).join('\n');
         if (err) {
+          const cancelled = /(-128|cancelled|cancel)/i.test(err.message);
           resolve({
             ok: false,
-            error: [err.message, output].filter(Boolean).join('\n'),
+            error: cancelled
+              ? 'Installation cancelled — please click Install and enter your Mac password when prompted.'
+              : `Installation failed: ${err.message}`,
             needsLogout: false,
           });
           return;
@@ -493,10 +500,8 @@ function installMacDriverViaScriptAsync() {
             gatekeeper: mic.gatekeeper,
             output,
             error: check.installed && !mic.visible
-              ? (mic.reason === 'no_signature' || mic.reason === 'gatekeeper_rejected'
-                ? 'Driver copied but macOS blocked it — use Terminal: sudo ./scripts/install-driver.sh'
-                : 'Driver installed — open Sound Settings or restart Mac')
-              : (check.installed ? null : 'Install failed — Terminal: sudo ./scripts/install-driver.sh'),
+              ? 'Driver installed — open Sound Settings or restart your Mac once.'
+              : (check.installed ? null : 'Install failed — try restarting the app as administrator.'),
             needsLogout: check.installed && !mic.visible,
           });
         }).catch((e) => {
