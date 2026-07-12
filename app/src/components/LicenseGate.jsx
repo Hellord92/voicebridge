@@ -112,7 +112,7 @@ export default function LicenseGate({ settings, licensed, licenseInfo, onActivat
                   <span className="text-sky-300 font-semibold">{p.price}</span>
                 </div>
               ))}
-              <p className="text-xs text-slate-500 pt-1">Minutes never expire · All 50 languages · Crypto + IBAN</p>
+              <p className="text-xs text-slate-500 pt-1">Minutes never expire · All 50 languages · Crypto</p>
             </div>
 
             <a

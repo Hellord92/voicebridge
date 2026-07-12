@@ -21,7 +21,6 @@ export default function PricingPage() {
   const t = useTranslations();
   const { user, account, signInGoogle } = useAuth();
   const [selectedPlan, setSelectedPlan]   = useState<string | null>(null);
-  const [payMethod, setPayMethod]         = useState<'crypto' | 'iban'>('crypto');
   const [cryptoCoin, setCryptoCoin]       = useState('USDT');
   const [email, setEmail]                 = useState('');
   const [loading, setLoading]             = useState(false);
@@ -44,7 +43,7 @@ export default function PricingPage() {
         body:    JSON.stringify({
           plan_id:         selectedPlan,
           email,
-          payment_method:  payMethod,
+          payment_method:  'crypto',
           crypto_currency: cryptoCoin,
           firebase_uid:    account?.uid ?? '',
           id_token:        idToken ?? '',
@@ -71,7 +70,7 @@ export default function PricingPage() {
         </p>
         <div className="flex items-center justify-center gap-2 mb-12">
           <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full">
-            💳 Pay with Crypto or Bank Transfer (IBAN)
+            💳 Pay with Crypto
           </span>
         </div>
 
@@ -159,51 +158,23 @@ export default function PricingPage() {
               className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-sky-400 mb-4"
             />
 
-            <label className="text-xs text-slate-400 block mb-2">Payment method</label>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {(['crypto', 'iban'] as const).map(m => (
+            <label className="text-xs text-slate-400 block mb-1">Select currency</label>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {CRYPTO.map(c => (
                 <button
-                  key={m}
-                  onClick={() => setPayMethod(m)}
+                  key={c}
+                  onClick={() => setCryptoCoin(c)}
                   className={clsx(
-                    'py-2.5 rounded-xl border text-sm font-semibold transition',
-                    payMethod === m
-                      ? 'bg-sky-500/10 border-sky-500 text-sky-300'
-                      : 'bg-slate-800 border-slate-600 text-slate-300',
+                    'px-3 py-1 rounded-lg border text-xs font-mono font-semibold transition',
+                    cryptoCoin === c
+                      ? 'bg-amber-500/10 border-amber-500 text-amber-300'
+                      : 'bg-slate-800 border-slate-600 text-slate-400',
                   )}
                 >
-                  {m === 'crypto' ? '₿ Cryptocurrency' : '🏦 Bank Transfer (IBAN)'}
+                  {c}
                 </button>
               ))}
             </div>
-
-            {payMethod === 'crypto' && (
-              <>
-                <label className="text-xs text-slate-400 block mb-1">Select currency</label>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {CRYPTO.map(c => (
-                    <button
-                      key={c}
-                      onClick={() => setCryptoCoin(c)}
-                      className={clsx(
-                        'px-3 py-1 rounded-lg border text-xs font-mono font-semibold transition',
-                        cryptoCoin === c
-                          ? 'bg-amber-500/10 border-amber-500 text-amber-300'
-                          : 'bg-slate-800 border-slate-600 text-slate-400',
-                      )}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {payMethod === 'iban' && (
-              <div className="bg-sky-500/5 border border-sky-500/20 rounded-lg px-3 py-2 mb-4 text-xs text-sky-300">
-                You will receive our bank details and a payment reference. License key is delivered within 24h after transfer confirmation.
-              </div>
-            )}
 
             <button
               onClick={handleCheckout}
