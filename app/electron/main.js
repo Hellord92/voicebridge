@@ -448,17 +448,30 @@ function shellQuote(s) {
 }
 
 function installMacDriverViaScriptAsync() {
-  const scriptPath = path.join(__dirname, '../../scripts/install-driver.sh');
+  // In packaged app: script + driver are in process.resourcesPath
+  const scriptPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'scripts', 'install-driver.sh')
+    : path.join(__dirname, '../../scripts/install-driver.sh');
+
+  const driverSrc = app.isPackaged
+    ? path.join(process.resourcesPath, 'VoiceBridgeAudio.driver')
+    : null; // dev: script finds it relative to repo root
+
   if (!fs.existsSync(scriptPath)) {
     return Promise.resolve({
       ok: false,
-      error: 'install-driver.sh not found — run from repo: sudo ./scripts/install-driver.sh',
+      error: 'install-driver.sh not found inside app bundle.',
     });
   }
+  // Pass driver source as $1 so the script doesn't need the repo structure
+  const shellCmd = driverSrc
+    ? `bash ${shellQuote(scriptPath)} ${shellQuote(driverSrc)}`
+    : `bash ${shellQuote(scriptPath)}`;
+
   return new Promise((resolve) => {
     execFile(
       'osascript',
-      ['-e', `do shell script ${JSON.stringify(`bash ${scriptPath}`)} with administrator privileges`],
+      ['-e', `do shell script ${JSON.stringify(shellCmd)} with administrator privileges`],
       { timeout: 120000, maxBuffer: 4 * 1024 * 1024 },
       (err, stdout, stderr) => {
         const output = [stdout, stderr].filter(Boolean).join('\n');

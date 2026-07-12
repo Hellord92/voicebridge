@@ -67,6 +67,10 @@
         {
           "from": "../drivers/macos/build/VoiceBridgeAudio.driver",
           "to": "VoiceBridgeAudio.driver"
+        },
+        {
+          "from": "../scripts/install-driver.sh",
+          "to": "scripts/install-driver.sh"
         }
       ]
     },

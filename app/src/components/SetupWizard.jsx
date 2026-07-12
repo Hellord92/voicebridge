@@ -14,6 +14,7 @@ export default function SetupWizard({ onComplete }) {
   const [driverReason, setDriverReason] = useState(null);
   const [micPolling, setMicPolling] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState(null);
   const pollTimerRef = useRef(null);
   const [micTesting, setMicTesting] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
@@ -92,6 +93,7 @@ export default function SetupWizard({ onComplete }) {
 
   const handleInstallDriver = async () => {
     setInstalling(true);
+    setInstallError(null);
     try {
       const r = await window.vb.installDriver();
       if (r.ok) {
@@ -99,7 +101,11 @@ export default function SetupWizard({ onComplete }) {
         if (r.micVisible === false) {
           await window.vb.openSystemSettings?.('sound');
         }
+      } else {
+        setInstallError(r.error || 'Installation failed. Try running the app as administrator.');
       }
+    } catch (e) {
+      setInstallError(e?.message || 'Unexpected error during installation.');
     } finally {
       setInstalling(false);
     }
@@ -182,14 +188,19 @@ export default function SetupWizard({ onComplete }) {
               </button>
             )}
             {!driverOk && (
-              <button
-                type="button"
-                disabled={installing}
-                onClick={handleInstallDriver}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold bg-white/10 border border-white/20 hover:bg-white/15 disabled:opacity-50"
-              >
-                {installing ? 'Installing…' : 'Install Virtual Microphone'}
-              </button>
+              <>
+                <button
+                  type="button"
+                  disabled={installing}
+                  onClick={handleInstallDriver}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold bg-white/10 border border-white/20 hover:bg-white/15 disabled:opacity-50"
+                >
+                  {installing ? 'Installing…' : 'Install Virtual Microphone'}
+                </button>
+                {installError && (
+                  <p className="text-[10px] text-red-400 leading-relaxed px-1">{installError}</p>
+                )}
+              </>
             )}
           </div>
         )}

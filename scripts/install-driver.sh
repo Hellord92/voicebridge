@@ -2,7 +2,12 @@
 # Install VoiceBridge virtual mic driver (macOS). Requires sudo.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="$ROOT/drivers/macos/build/VoiceBridgeAudio.driver"
+# $1 can override driver source (used when running from packaged app bundle)
+if [[ -n "${1:-}" && -d "${1}/Contents/MacOS" ]]; then
+  SRC="$1"
+else
+  SRC="${VB_DRIVER_SRC:-$ROOT/drivers/macos/build/VoiceBridgeAudio.driver}"
+fi
 DEST="/Library/Audio/Plug-Ins/HAL/VoiceBridgeAudio.driver"
 
 if [[ ! -d "$SRC/Contents/MacOS" ]]; then
