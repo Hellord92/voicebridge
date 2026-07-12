@@ -4,6 +4,7 @@ import { useAuth } from '../../../lib/auth';
 import clsx from 'clsx';
 
 const GITHUB_REPO = 'Hellord92/voicebridge';
+const LATEST_VERSION = '0.1.0';
 
 export default function DownloadPage() {
   const t = useTranslations();
@@ -20,14 +21,14 @@ export default function DownloadPage() {
         {/* Download buttons */}
         <div className="grid sm:grid-cols-2 gap-4 mb-10">
           <a
-            href={`https://github.com/${GITHUB_REPO}/releases/latest/download/VoiceBridge.dmg`}
+            href={`https://github.com/${GITHUB_REPO}/releases/latest/download/VoiceBridge-${LATEST_VERSION}-arm64.dmg`}
             className="group flex flex-col items-center gap-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-sky-500/40 rounded-2xl p-6 transition"
           >
             <span className="text-5xl group-hover:scale-110 transition-transform"></span>
             <div>
               <p className="text-lg font-bold">macOS</p>
-              <p className="text-sm text-slate-400">Apple Silicon + Intel · macOS 12+</p>
-              <p className="text-xs text-slate-500 mt-1">.dmg installer</p>
+              <p className="text-sm text-slate-400">Apple Silicon (M1+) · macOS 13+</p>
+              <p className="text-xs text-slate-500 mt-1">v{LATEST_VERSION} · .dmg installer · signed & notarized</p>
             </div>
             <span className="mt-2 text-sm font-semibold text-sky-400">Download →</span>
           </a>
@@ -124,8 +125,8 @@ export default function DownloadPage() {
           <div className="grid sm:grid-cols-2 gap-2 text-left">
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
               <p className="font-medium text-slate-300 mb-1"> macOS</p>
-              <p>macOS Monterey 12.0 or later</p>
-              <p>Apple Silicon (M1+) or Intel</p>
+              <p>macOS Ventura 13.0 or later</p>
+              <p>Apple Silicon (M1/M2/M3/M4)</p>
               <p>2 GB RAM minimum</p>
               <p>Internet connection required</p>
             </div>
