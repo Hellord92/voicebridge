@@ -20,13 +20,21 @@ from config import settings
 NOWPAYMENTS_BASE = 'https://api.nowpayments.io/v1'
 
 CRYPTO_CURRENCIES = [
-    {'code': 'BTC',   'name': 'Bitcoin',         'icon': '₿'},
-    {'code': 'ETH',   'name': 'Ethereum',         'icon': 'Ξ'},
-    {'code': 'USDT',  'name': 'USDT (TRC-20)',    'icon': '$'},
-    {'code': 'USDC',  'name': 'USDC',             'icon': '$'},
-    {'code': 'LTC',   'name': 'Litecoin',         'icon': 'Ł'},
-    {'code': 'SOL',   'name': 'Solana',           'icon': '◎'},
+    {'code': 'BTC',   'name': 'Bitcoin',              'icon': '₿', 'np_code': 'btc'},
+    {'code': 'ETH',   'name': 'Ethereum',             'icon': 'Ξ', 'np_code': 'eth'},
+    {'code': 'USDT',  'name': 'USDT (TRC-20)',        'icon': '$', 'np_code': 'usdttrc20'},
+    {'code': 'USDC',  'name': 'USDC (Ethereum)',      'icon': '$', 'np_code': 'usdc'},
+    {'code': 'LTC',   'name': 'Litecoin',             'icon': 'Ł', 'np_code': 'ltc'},
+    {'code': 'SOL',   'name': 'Solana',               'icon': '◎', 'np_code': 'sol'},
 ]
+
+_NP_CODE_BY_SYMBOL: dict[str, str] = {c['code'].upper(): c['np_code'] for c in CRYPTO_CURRENCIES}
+
+
+def resolve_nowpayments_currency(symbol: str) -> str:
+    """Map UI symbol (USDT) to NOWPayments pay_currency (usdttrc20)."""
+    key = (symbol or 'USDT').strip().upper()
+    return _NP_CODE_BY_SYMBOL.get(key, key.lower())
 
 
 async def create_crypto_payment(
@@ -43,10 +51,11 @@ async def create_crypto_payment(
         'x-api-key':    settings.nowpayments_api_key,
         'Content-Type': 'application/json',
     }
+    pay_currency = resolve_nowpayments_currency(currency)
     payload = {
         'price_amount':    float(amount_usd),
         'price_currency':  'USD',
-        'pay_currency':    currency.lower(),
+        'pay_currency':    pay_currency,
         'order_id':        order_id,
         'order_description': f'VoiceBridge — Order {order_id}',
         'ipn_callback_url': f'{settings.server_public_url}/api/payments/crypto/webhook',
