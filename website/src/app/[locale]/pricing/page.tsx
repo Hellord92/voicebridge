@@ -42,8 +42,7 @@ export default function PricingPage() {
     if (!effectiveEmail || !selectedPlan) return;
     setLoading(true);
     try {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://api.voicebridgeapps.com';
-      const res = await fetch(`${apiBase}/api/orders/create`, {
+      const res = await fetch('/api/checkout', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
