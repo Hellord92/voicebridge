@@ -146,16 +146,14 @@ export default function DashboardPage() {
                 <p className="text-xs text-slate-400">.dmg · Apple Silicon + Intel</p>
               </div>
             </a>
-            <a
-              href={`https://github.com/${GITHUB_REPO}/releases/latest/download/VoiceBridge-Setup.exe`}
-              className="flex items-center gap-3 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 transition"
-            >
+            <div className="flex items-center gap-3 bg-slate-800/40 border border-slate-700 rounded-xl px-4 py-3 opacity-50 cursor-not-allowed select-none">
               <span className="text-2xl">🪟</span>
               <div>
-                <p className="font-semibold text-sm">Windows</p>
-                <p className="text-xs text-slate-400">.exe · Windows 10/11</p>
+                <p className="font-semibold text-sm text-slate-300">Windows</p>
+                <p className="text-xs text-slate-500">.exe · Windows 10/11</p>
+                <span className="text-xs text-amber-400/70">Coming next month</span>
               </div>
-            </a>
+            </div>
           </div>
           <p className="text-xs text-slate-500 mt-3">
             Sign in with the same Google account inside the app — your minutes will sync automatically.

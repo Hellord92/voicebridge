@@ -74,7 +74,7 @@ export default function PricingPage() {
           Simple, minute-based pricing
         </h1>
         <p className="text-center text-slate-400 mb-4">
-          All packages include all 50 languages · Minutes never expire
+          All packages include all 100 languages · Minutes never expire
         </p>
         <div className="flex items-center justify-center gap-2 mb-12">
           <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full">
@@ -87,7 +87,7 @@ export default function PricingPage() {
           {/* Free card */}
           <div className="rounded-2xl p-5 border bg-slate-900 border-slate-800 flex flex-col">
             <div className="font-bold text-lg mb-1">Free</div>
-            <div className="text-xs text-slate-400 mb-4">Try all 50 languages — 5 min per session</div>
+            <div className="text-xs text-slate-400 mb-4">Try all 100 languages — 5 min trial</div>
             <div className="text-3xl font-extrabold mb-5">$0</div>
             <Link href="/download" className="mt-auto block w-full py-2.5 rounded-xl border border-slate-700 hover:border-slate-500 text-center text-sm font-semibold transition">
               Download
@@ -222,14 +222,14 @@ export default function PricingPage() {
 function PaymentResult({ result }: { result: any }) {
   const p = result.payment;
   const [orderStatus, setOrderStatus] = useState<any>(null);
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://api.voicebridgeapps.com';
+  const apiBase = '/api';
 
   useEffect(() => {
     if (!result.order_id) return;
     let active = true;
     const poll = async () => {
       try {
-        const res = await fetch(`${apiBase}/api/orders/${result.order_id}`);
+        const res = await fetch(`${apiBase}/order-status?id=${result.order_id}`);
         if (!res.ok) return;
         const data = await res.json();
         if (active) setOrderStatus(data);
