@@ -92,16 +92,16 @@ async def synthesize_streaming(
 
     payload = {
         'text':       text,
-        'model_id':   'eleven_flash_v2_5',
+        'model_id':   'eleven_turbo_v2_5',
         'language_code': lang,
         'voice_settings': {
-            'stability':         0.4,
-            'similarity_boost':  0.7,
+            'stability':         0.55,
+            'similarity_boost':  0.80,
             'style':             0.0,
-            'use_speaker_boost': True,
+            'use_speaker_boost': False,
         },
-        'output_format': 'mp3_44100_128',  # 44.1kHz 128kbps — clean speech quality
-        'optimize_streaming_latency': 4,  # max latency reduction
+        'output_format': 'mp3_44100_128',
+        'optimize_streaming_latency': 3,
     }
 
     headers = {'xi-api-key': settings.elevenlabs_api_key, 'Content-Type': 'application/json'}
@@ -138,16 +138,16 @@ async def synthesize_streaming_chunks(
 
     payload = {
         'text':       text,
-        'model_id':   'eleven_flash_v2_5',
+        'model_id':   'eleven_turbo_v2_5',
         'language_code': lang,
         'voice_settings': {
-            'stability':         0.35,
-            'similarity_boost':  0.7,
+            'stability':         0.55,
+            'similarity_boost':  0.80,
             'style':             0.0,
-            'use_speaker_boost': True,
+            'use_speaker_boost': False,
         },
-        'output_format': 'mp3_44100_128',  # 44.1kHz 128kbps — clean speech quality
-        'optimize_streaming_latency': 4,  # max latency reduction
+        'output_format': 'mp3_44100_128',
+        'optimize_streaming_latency': 3,
     }
 
     headers = {'xi-api-key': settings.elevenlabs_api_key, 'Content-Type': 'application/json'}

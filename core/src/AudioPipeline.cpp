@@ -149,7 +149,7 @@ static void streamPcmToVirtualMic(const std::vector<float> &pcm48, std::atomic<b
     /* Skip if SHM not open (driver not installed). RAII guard above ensures ttsGate clears. */
     if (!vb_shm_is_ready()) return;
 
-    const uint32_t kChunk   = 512u;   /* matches driver IO buffer */
+    const uint32_t kChunk   = 2048u;  /* 4× driver buffer — reduces scheduling jitter impact */
     const int      kMaxRetry = 500;   /* 500 × 2ms = 1 s max stall per chunk */
     size_t offset = 0;
 
@@ -173,9 +173,10 @@ static void streamPcmToVirtualMic(const std::vector<float> &pcm48, std::atomic<b
         }
         offset += written;
 
-        /* Real-time pacing — keeps WhatsApp/Meet fed smoothly, not one burst */
-        std::this_thread::sleep_for(std::chrono::microseconds(
-            (written * 1000000u) / 48000u));
+    /* Write at 90% real-time speed — keeps ring ~10% ahead of driver
+     * consumption, absorbing OS scheduling jitter and preventing underruns. */
+    std::this_thread::sleep_for(std::chrono::microseconds(
+        (written * 900000u) / 48000u));
     }
 }
 #endif
@@ -290,8 +291,8 @@ struct AudioPipeline::Impl {
     void keepaliveLoop() {
         /* Match driver IO buffer size (512 frames @ 48kHz ≈ 10.67ms) */
         static const uint32_t kFrames = 512u;
-        /* -34 dBFS — above Zoom/Meet noise-removal threshold, inaudible in practice */
-        static const float    kAmp    = 0.020f;
+        /* -60 dBFS — below hearing threshold, keeps mic "active" in Zoom/Meet */
+        static const float    kAmp    = 0.001f;
         float buf[kFrames];
         /* Dithered near-silence: alternating polarity avoids DC offset */
         for (uint32_t i = 0; i < kFrames; ++i)
@@ -507,9 +508,10 @@ struct AudioPipeline::Impl {
         auto pcmOut = decodeMp3(mp3, false, &srcHz);
         if (pcmOut.empty()) return;
 
-        /* Resample TTS output (22050 or 44100Hz) → 48kHz driver rate */
+        /* Resample TTS output (22050 or 44100Hz) → 48kHz driver rate.
+         * ElevenLabs output is already well-normalized — skip normalizePCM to
+         * avoid amplifying resampling artifacts and causing distortion. */
         auto pcm48 = resampleTo48k(pcmOut, srcHz);
-        normalizePCM(pcm48);
 
         /* Stream TTS to virtual mic at 48 kHz real-time pace.
          * ttsPlaying stays true for full playback (mute-while-speaking). */
@@ -656,8 +658,8 @@ void AudioPipeline::unmuteInput() { mImpl->inputMuted.store(false); }
 static void globalKeepaliveLoop()
 {
     static const uint32_t kFrames = 512u;
-    /* -34 dBFS dithered tone — above Zoom/Meet noise-removal, inaudible to humans */
-    static const float kAmp = 0.020f;
+    /* -60 dBFS dithered tone — below hearing threshold, keeps mic "active" in Zoom/Meet */
+    static const float kAmp = 0.001f;
     float buf[kFrames];
     for (uint32_t i = 0; i < kFrames; ++i)
         buf[i] = kAmp * ((i % 2 == 0) ? 1.0f : -1.0f) * (0.5f + 0.5f * ((float)(i % 7) / 6.0f));

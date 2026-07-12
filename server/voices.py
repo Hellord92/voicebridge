@@ -6,11 +6,11 @@ from config import settings
 
 VOICES = {
     'female': {
-        'id':   '21m00Tcm4TlvDq8ikWAM',  # Rachel — multilingual
+        'id':   'XB0fDUnXU5powFXDhCwa',  # Charlotte — warm, natural, conversational
         'name': 'Female',
     },
     'male': {
-        'id':   'pNInz6obpgDQGcFmaJgB',  # Adam — multilingual
+        'id':   'nPczCjzI2devNBz1zQrb',  # Brian — deep, clear, natural
         'name': 'Male',
     },
 }
